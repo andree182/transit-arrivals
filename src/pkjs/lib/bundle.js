@@ -14,9 +14,9 @@ function dirCode(route, dir) {
 
 function encodeBundle(stationId, stationName, lines, epochBase, colorFn) {
   var b = [];
-  b.push(2);                       // version
+  b.push(3);                       // version
   putU32(b, epochBase);
-  putStr(b, stationName, 24);
+  putStr(b, stationName, 39);
   putStr(b, stationId, 11);
   b.push(lines.length & 0xff);
   lines.forEach(function (ln) {

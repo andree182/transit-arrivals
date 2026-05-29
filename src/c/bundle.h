@@ -10,7 +10,7 @@ typedef struct { char label[3]; uint8_t r, g, b; uint8_t nDirs; DirView dirs[MAX
 typedef struct {
   uint8_t version;
   uint32_t epochBase;
-  char station[25];
+  char station[40];
   char id[12];
   uint8_t nLines;
   LineView lines[MAX_LINES];

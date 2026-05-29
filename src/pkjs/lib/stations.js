@@ -23,4 +23,11 @@ function getStation(id) {
   return null;
 }
 
-module.exports = { nearestStation, getStation, _db: DB };
+function displayName(station) {
+  var lines = (station.lines && station.lines.length)
+    ? ' (' + station.lines.join('') + ')'
+    : '';
+  return station.name + lines;
+}
+
+module.exports = { nearestStation, getStation, displayName, _db: DB };

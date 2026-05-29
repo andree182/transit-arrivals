@@ -32,7 +32,7 @@ function refreshFor(station) {
         var now = nowSecs();
         var model = arrivalsLib.buildArrivals(rows, station.id, now);
         if (!model.length) return sendError(4);                    // no trains
-        var bytes = bundleLib.encodeBundle(station.id, station.name, model, now, linesLib.colorForLine);
+        var bytes = bundleLib.encodeBundle(station.id, stations.displayName(station), model, now, linesLib.colorForLine);
         Pebble.sendAppMessage({ Bundle: Array.prototype.slice.call(bytes) });
       }
     });
