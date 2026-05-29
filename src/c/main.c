@@ -222,8 +222,13 @@ static void manage_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, vo
   }
   const Fav *f = favorites_get(ring_fav_index(idx->row));
   if (!f) return;
-  const char *sub = moving ? "Up/Down move · SELECT drop" : NULL;
-  menu_cell_basic_draw(ctx, cell, f->name, sub, NULL);
+  if (moving) {
+    menu_cell_basic_draw(ctx, cell, f->label[0] ? f->label : f->name, "Up/Down move · SELECT drop", NULL);
+  } else if (f->label[0]) {
+    menu_cell_basic_draw(ctx, cell, f->label, f->name, NULL);  // label as title, station name beneath
+  } else {
+    menu_cell_basic_draw(ctx, cell, f->name, NULL, NULL);
+  }
 }
 
 // Move the ring slot at row by dir (+1 down / -1 up). Updates favorite order or
