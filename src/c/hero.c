@@ -58,9 +58,13 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   // band above it. Lift it proportionally to how much taller the screen is than
   // basalt: zero on basalt/diorite/flint (SY==1, pixel-identical), tiny on
   // chalk, meaningful on emery/gabbro.
-  int lift = (int)((SY - 1.0f) * 50.0f);
+  int lift = (int)((SY - 1.0f) * 30.0f);
   GPoint disc = GPoint((int)(DISC_CX * SX), (int)(DISC_CY * SY) - lift);
+  // The roundel letter tops out at BITHAM_42 (largest letter-capable system
+  // font), so the disc must stop growing too or the letter looks lost inside
+  // it. Cap keeps the letter:disc ratio consistent on emery/gabbro.
   int r = (int)(DISC_R * ((SX + SY) / 2));
+  if (r > 35) r = 35;
 #if defined(PBL_COLOR)
   graphics_context_set_fill_color(ctx, GColorFromRGB(L->r, L->g, L->b));
 #else
@@ -71,12 +75,17 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   // The disc scales with the screen but system fonts don't, so the roundel
   // letter looks lost on emery/gabbro. Step up to the largest bold face once
   // the disc grows past basalt/chalk.
-  GFont lf = fonts_get_system_font(r >= 32 ? FONT_KEY_BITHAM_42_BOLD : FONT_KEY_BITHAM_30_BLACK);
+  bool bigLetter = (r >= 32);
+  GFont lf = fonts_get_system_font(bigLetter ? FONT_KEY_BITHAM_42_BOLD : FONT_KEY_BITHAM_30_BLACK);
   GSize ls = graphics_text_layout_get_content_size(L->label, lf,
                GRect(0, 0, 2 * r + 8, 2 * r + 8), GTextOverflowModeFill, GTextAlignmentCenter);
   graphics_context_set_text_color(ctx, GColorBlack);
+  // Both Bitham faces carry top padding so the cap sits high in its line box;
+  // nudge up to visually center the glyph on the disc. The 42 box is taller,
+  // so it needs a larger nudge than the 30.
+  int lnudge = bigLetter ? -7 : -4;
   graphics_draw_text(ctx, L->label, lf,
-    GRect(disc.x - ls.w / 2, disc.y - ls.h / 2 - 4, ls.w + 2, ls.h + 8),
+    GRect(disc.x - ls.w / 2, disc.y - ls.h / 2 + lnudge, ls.w + 2, ls.h + 8),
     GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 
   char num[12];
