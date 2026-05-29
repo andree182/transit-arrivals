@@ -1,5 +1,4 @@
 #include <pebble.h>
-#include <string.h>
 #include "bundle.h"
 #include "hero.h"
 #include "states.h"
@@ -189,27 +188,6 @@ static void init(void) {
 
   tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
   s_poll = app_timer_register(30000, poll_cb, NULL);
-
-#ifdef MTA_FAKE
-  {
-    memset(&s_bundle, 0, sizeof(s_bundle));
-    s_bundle.version = 2;
-    s_bundle.epochBase = time(NULL);
-    strncpy(s_bundle.station, "Astoria-Ditmars Blvd", sizeof(s_bundle.station) - 1);
-    strcpy(s_bundle.id, "R01");
-    s_bundle.nLines = 1;
-    LineView *L = &s_bundle.lines[0];
-    L->label[0] = 'N'; L->label[1] = 0; L->label[2] = 0;
-    L->r = 252; L->g = 204; L->b = 10;
-    L->nDirs = 1;
-    DirView *D = &L->dirs[0];
-    memcpy(D->dest, "Astoria-Ditmars Blvd", sizeof("Astoria-Ditmars Blvd"));
-    D->n = 4;
-    D->delta[0] = 120; D->delta[1] = 480; D->delta[2] = 840; D->delta[3] = 1260;
-    s_have_bundle = true;
-    render_dispatch();
-  }
-#endif
 }
 static void deinit(void) {
   tick_timer_service_unsubscribe();
