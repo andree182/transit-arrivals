@@ -54,7 +54,12 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   graphics_draw_text(ctx, D->dest, hdr, GRect(hdr_inset, hdr_top, bounds.size.w - 2 * hdr_inset, hdr_h),
                      hdr_of, GTextAlignmentCenter, NULL);
 
-  GPoint disc = GPoint((int)(DISC_CX * SX), (int)(DISC_CY * SY));
+  // On taller screens the hero (disc + count) otherwise floats low with a dead
+  // band above it. Lift it proportionally to how much taller the screen is than
+  // basalt: zero on basalt/diorite/flint (SY==1, pixel-identical), tiny on
+  // chalk, meaningful on emery/gabbro.
+  int lift = (int)((SY - 1.0f) * 50.0f);
+  GPoint disc = GPoint((int)(DISC_CX * SX), (int)(DISC_CY * SY) - lift);
   int r = (int)(DISC_R * ((SX + SY) / 2));
 #if defined(PBL_COLOR)
   graphics_context_set_fill_color(ctx, GColorFromRGB(L->r, L->g, L->b));
@@ -63,7 +68,10 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
 #endif
   graphics_fill_circle(ctx, disc, r);
 
-  GFont lf = fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK);
+  // The disc scales with the screen but system fonts don't, so the roundel
+  // letter looks lost on emery/gabbro. Step up to the largest bold face once
+  // the disc grows past basalt/chalk.
+  GFont lf = fonts_get_system_font(r >= 32 ? FONT_KEY_BITHAM_42_BOLD : FONT_KEY_BITHAM_30_BLACK);
   GSize ls = graphics_text_layout_get_content_size(L->label, lf,
                GRect(0, 0, 2 * r + 8, 2 * r + 8), GTextOverflowModeFill, GTextAlignmentCenter);
   graphics_context_set_text_color(ctx, GColorBlack);
