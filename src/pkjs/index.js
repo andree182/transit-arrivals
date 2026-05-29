@@ -49,7 +49,7 @@ function handleRequest(msg) {
         if (st) refreshFor(st); else sendError(2);
       },
       function (e) { console.log('[mta] geo FAIL ' + (e && e.message)); sendError(1); },
-      { timeout: 15000, maximumAge: 60000 }
+      { timeout: 15000, maximumAge: 5000 }
     );
   } else if (msg.StationId) {
     var st = stations.getStation(msg.StationId);
