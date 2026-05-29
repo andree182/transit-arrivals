@@ -34,9 +34,9 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   graphics_context_set_text_color(ctx, GColorLightGray);
   // On round, the top chord is narrow: inset hard and let the headsign wrap to
   // two lines instead of ellipsizing. On rect, keep the single-line look.
-  int hdr_top = PBL_IF_ROUND_ELSE((int)(14 * SY), (int)(8 * SY));
-  int hdr_inset = PBL_IF_ROUND_ELSE(26, 2);
-  int hdr_h = PBL_IF_ROUND_ELSE(40, 36);
+  int hdr_top = PBL_IF_ROUND_ELSE((int)(12 * SY), (int)(8 * SY));
+  int hdr_inset = PBL_IF_ROUND_ELSE(34, 2);
+  int hdr_h = PBL_IF_ROUND_ELSE(44, 36);
   GTextOverflowMode hdr_of = PBL_IF_ROUND_ELSE(GTextOverflowModeWordWrap, GTextOverflowModeTrailingEllipsis);
   graphics_draw_text(ctx, D->dest, hdr, GRect(hdr_inset, hdr_top, bounds.size.w - 2 * hdr_inset, hdr_h),
                      hdr_of, GTextAlignmentCenter, NULL);
@@ -72,10 +72,11 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
                GRect(0, 0, bounds.size.w, bounds.size.h), GTextOverflowModeFill, GTextAlignmentLeft);
   graphics_context_set_text_color(ctx, GColorWhite);
   int nx = (int)(leftX * SX);
-  // Rect uses the locked baseline. Round system fonts don't scale with SY, so
-  // a scaled baseline drifts low — instead center the number ink box on the
-  // disc center line, matching the roundel optically.
-  int ny = PBL_IF_ROUND_ELSE(disc.y - ns.h / 2, (int)(baseY * SY) - ns.h);
+  // The number's vertical offset from the disc center is a FONT-METRIC
+  // constant (system fonts don't scale with SY), so anchor to the scaled
+  // disc.y and add the UNSCALED baseline offset locked on basalt. This keeps
+  // basalt pixel-identical and centers the digit on the roundel on round.
+  int ny = disc.y + (int)(baseY - DISC_CY) - ns.h;
   graphics_draw_text(ctx, num, nf, GRect(nx, ny, ns.w + 4, ns.h + 8),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 
@@ -83,7 +84,7 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
     GFont uf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
     graphics_context_set_text_color(ctx, GColorLightGray);
     int ux = nx + ns.w + (int)(MIN_GAP * SX);
-    int uy = PBL_IF_ROUND_ELSE(ny + ns.h - 18, (int)(MIN_BASEY * SY) - 16);
+    int uy = disc.y + (int)(MIN_BASEY - DISC_CY) - 16;
     graphics_draw_text(ctx, "min", uf, GRect(ux, uy, 40, 18),
                        GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   }
