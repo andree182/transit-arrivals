@@ -24,8 +24,9 @@ bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
     if (L->nDirs > MAX_DIRS) L->nDirs = MAX_DIRS;
     for (int d = 0; d < L->nDirs; d++) {
       DirView *D = &L->dirs[d];
-      if (i + 21 > len) return false;
+      if (i + 22 > len) return false;
       memcpy(D->dest, p + i, 20); D->dest[20] = 0; i += 20;
+      D->dir = p[i++];
       D->n = p[i++];
       if (D->n > MAX_ARR) D->n = MAX_ARR;
       if (i + (size_t)D->n * 2 > len) return false;

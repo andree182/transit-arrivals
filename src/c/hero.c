@@ -30,13 +30,26 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   float SX = bounds.size.w / REF_W, SY = bounds.size.h / REF_H;
   graphics_context_set_antialiased(ctx, true);
 
-  GFont hdr = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
-  graphics_context_set_text_color(ctx, GColorLightGray);
+  // Direction line (small gray caps) over the destination headsign, matching
+  // the mockup. dir: 0=uptown, 1=downtown, 2=none (crosstown/shuttle — the
+  // phone suppresses the word because N/S don't map to uptown/downtown there).
+  int hdr_inset = PBL_IF_ROUND_ELSE(34, 4);
+  int dir_top = (int)(6 * SY);
+  const char *dlabel = D->dir == 0 ? "UPTOWN" : (D->dir == 1 ? "DOWNTOWN" : NULL);
+  if (dlabel) {
+    graphics_context_set_text_color(ctx, GColorLightGray);
+    graphics_draw_text(ctx, dlabel, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+      GRect(hdr_inset, dir_top, bounds.size.w - 2 * hdr_inset, 16),
+      GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  }
+
   // On round, the top chord is narrow: inset hard and let the headsign wrap to
-  // two lines instead of ellipsizing. On rect, keep the single-line look.
-  int hdr_top = PBL_IF_ROUND_ELSE((int)(12 * SY), (int)(8 * SY));
-  int hdr_inset = PBL_IF_ROUND_ELSE(34, 2);
-  int hdr_h = PBL_IF_ROUND_ELSE(44, 36);
+  // two lines instead of ellipsizing. On rect, keep the single-line look. With
+  // no direction word, the headsign rises to fill the freed top slot.
+  GFont hdr = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+  graphics_context_set_text_color(ctx, GColorWhite);
+  int hdr_top = dir_top + (dlabel ? 14 : 2);
+  int hdr_h = PBL_IF_ROUND_ELSE(38, 22);
   GTextOverflowMode hdr_of = PBL_IF_ROUND_ELSE(GTextOverflowModeWordWrap, GTextOverflowModeTrailingEllipsis);
   graphics_draw_text(ctx, D->dest, hdr, GRect(hdr_inset, hdr_top, bounds.size.w - 2 * hdr_inset, hdr_h),
                      hdr_of, GTextAlignmentCenter, NULL);
@@ -96,8 +109,17 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   }
   GFont ff = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   graphics_context_set_text_color(ctx, GColorLightGray);
-  int ft_top = PBL_IF_ROUND_ELSE((int)(128 * SY), (int)(132 * SY));
   int ft_inset = PBL_IF_ROUND_ELSE(24, 2);
+  int ft_top = (int)(PBL_IF_ROUND_ELSE(110, 116) * SY);
   graphics_draw_text(ctx, nxt, ff, GRect(ft_inset, ft_top, bounds.size.w - 2 * ft_inset, 24),
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+
+  // Current station, dimmer, below NEXT. Wrap to two lines so long names are
+  // never clipped; the box is sized for two lines of GOTHIC_14.
+  GFont sf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite));
+  int st_inset = PBL_IF_ROUND_ELSE(34, 4);
+  int st_top = (int)(PBL_IF_ROUND_ELSE(132, 138) * SY);
+  graphics_draw_text(ctx, b->station, sf, GRect(st_inset, st_top, bounds.size.w - 2 * st_inset, 34),
+                     GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
 }
