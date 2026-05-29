@@ -3,6 +3,7 @@
 #include "hero.h"
 #include "states.h"
 #include "favorites.h"
+#include "favsync.h"
 
 #define PERSIST_BUNDLE 1
 #define PERSIST_SEL    5
@@ -33,6 +34,7 @@ static TextLayer *s_confirm_msg, *s_confirm_hint;
 static void render_dispatch(void);
 static void open_settings(ClickRecognizerRef r, void *c);
 static void open_manage(void);
+static void push_favsync(void);
 
 // The ring is favorites in stored order with the Nearest slot inserted at
 // s_nearest_pos. With no favorites, Nearest is forced on so the ring is never
@@ -93,6 +95,16 @@ static void request_refresh(void) {
   app_message_outbox_send();
 }
 
+static void push_favsync(void) {
+  uint8_t buf[2 + FAV_MAX * (3 + (FAV_ID_LEN - 1) + (FAV_NAME_LEN - 1) + (FAV_LABEL_LEN - 1))];
+  size_t n = favsync_encode(s_nearest_pos, buf, sizeof(buf));
+  if (!n) return;
+  DictionaryIterator *out;
+  if (app_message_outbox_begin(&out) != APP_MSG_OK) return;
+  dict_write_data(out, MESSAGE_KEY_FavSync, buf, n);
+  app_message_outbox_send();
+}
+
 static uint16_t menu_num_rows(MenuLayer *m, uint16_t section, void *ctx) {
   return favorites_count() == 0 ? 2 : 3;
 }
@@ -128,6 +140,7 @@ static void menu_select(MenuLayer *m, MenuIndex *idx, void *c) {
         // Jump the ring to the just-added favorite (the new last entry).
         s_sel = fav_ring_index(favorites_count() - 1);
         persist_write_int(PERSIST_SEL, s_sel);
+        push_favsync();
       }
       menu_layer_reload_data(m);
       break;
@@ -163,6 +176,7 @@ static void confirm_yes(ClickRecognizerRef r, void *c) {
   persist_write_int(PERSIST_NEAREST_POS, s_nearest_pos);
   clamp_sel();
   persist_write_int(PERSIST_SEL, s_sel);
+  push_favsync();
   s_move_row = -1;
   window_stack_pop(true);                              // pop confirm
   if (favorites_count() == 0 && !nearest_on()) window_stack_pop(true);
@@ -231,6 +245,7 @@ static int ring_move(int row, int dir) {
   if (s_sel == (uint8_t)row)         s_sel = (uint8_t)target;
   else if (s_sel == (uint8_t)target) s_sel = (uint8_t)row;
   persist_write_int(PERSIST_SEL, s_sel);
+  push_favsync();
   return target;
 }
 
@@ -267,6 +282,7 @@ static void manage_remove(ClickRecognizerRef r, void *c) {
     persist_write_int(PERSIST_NEAREST_POS, s_nearest_pos);
     clamp_sel();
     persist_write_int(PERSIST_SEL, s_sel);
+    push_favsync();
     menu_layer_reload_data(s_manage_menu);
     return;
   }
@@ -352,6 +368,25 @@ static void click_config(void *ctx) {
 }
 
 static void inbox_received(DictionaryIterator *iter, void *ctx) {
+  Tuple *favreq = dict_find(iter, MESSAGE_KEY_FavReq);
+  if (favreq) { push_favsync(); return; }
+  Tuple *favset = dict_find(iter, MESSAGE_KEY_FavSet);
+  if (favset) {
+    static Fav items[FAV_MAX];
+    uint8_t nearest = 0;
+    int n = favsync_decode(favset->value->data, favset->length, items, &nearest);
+    if (n >= 0) {
+      favorites_replace_all(items, (uint8_t)n);
+      s_nearest_pos = nearest;
+      persist_write_int(PERSIST_NEAREST_POS, s_nearest_pos);
+      clamp_sel();
+      persist_write_int(PERSIST_SEL, s_sel);
+      push_favsync();
+      request_refresh();
+      render_dispatch();
+    }
+    return;
+  }
   Tuple *err = dict_find(iter, MESSAGE_KEY_ErrorCode);
   Tuple *bun = dict_find(iter, MESSAGE_KEY_Bundle);
   if (bun) {
@@ -364,7 +399,7 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
     }
   } else if (err) {
     int code = (int)err->value->uint8;
-    if (code == 0) { request_refresh(); }
+    if (code == 0) { push_favsync(); request_refresh(); }
     else { s_error = code; s_switching = false; }
   }
   render_dispatch();

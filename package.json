@@ -18,7 +18,10 @@
       "UseNearest",
       "StationId",
       "Bundle",
-      "ErrorCode"
+      "ErrorCode",
+      "FavSync",
+      "FavSet",
+      "FavReq"
     ],
     "resources": { "media": [] }
   }
