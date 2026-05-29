@@ -58,9 +58,9 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, b, 0, GCornerNone);
-#ifndef MTA_FAKE
-  if (s_error > 0) return;
-#endif
+  // A cached bundle always wins: when offline/stale we keep showing the
+  // last-known arrivals rather than blanking. Loading / error-only screens
+  // (no bundle yet) are drawn in Task 11.
   if (!s_have_bundle) return;
   hero_draw(ctx, b, &s_bundle, s_line, s_dir, time(NULL));
 }
