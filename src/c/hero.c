@@ -15,12 +15,6 @@ static void fmt_count(int mins, char *out, size_t n) {
   else snprintf(out, n, "%d", mins);
 }
 
-static GFont num_font(int target) {
-  if (target >= 46) return fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
-  if (target >= 38) return fonts_get_system_font(FONT_KEY_BITHAM_42_LIGHT);
-  return fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
-}
-
 void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8_t dir, time_t now) {
   if (!b || line >= b->nLines) return;
   const LineView *L = &b->lines[line];
@@ -97,8 +91,10 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   bool isDouble = (!isNow && mins >= 10);
   float leftX = isNow ? 75.8f : (isDouble ? 68.8f : 76.6f);
   float baseY = isNow ? 91.5f : (isDouble ? 95.1f : 96.8f);
-  int   fsize = isNow ? 28 : (isDouble ? 41 : 48);
-  GFont nf = num_font(fsize);
+  // Single and double-digit counts share the same bold face; only the position
+  // shifts to make room for the second digit. ("Now" uses a smaller bold word.)
+  GFont nf = isNow ? fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD)
+                   : fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
   GSize ns = graphics_text_layout_get_content_size(num, nf,
                GRect(0, 0, bounds.size.w, bounds.size.h), GTextOverflowModeFill, GTextAlignmentLeft);
   graphics_context_set_text_color(ctx, GColorWhite);
