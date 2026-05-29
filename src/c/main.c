@@ -1,10 +1,13 @@
 #include <pebble.h>
+#include <string.h>
 #include "bundle.h"
+#include "hero.h"
 
 #define PERSIST_BUNDLE 1
 #define PERSIST_USE_NEAREST 2
 
 static Window *s_window;
+static Layer *s_canvas;
 static Bundle s_bundle;
 static bool s_have_bundle = false;
 static int s_error = -1;        // -1 none; 0 ready; 1 no-loc; 2 bad-station; 3 offline; 4 no-trains
@@ -51,9 +54,25 @@ static void load_cached_bundle(void) {
   free(buf);
 }
 
-static void window_load(Window *w) { /* layers added in Task 9 */ }
-static void window_unload(Window *w) { /* destroy in Task 9 */ }
-static void render_dispatch(void) { layer_mark_dirty(window_get_root_layer(s_window)); }
+static void canvas_update(Layer *layer, GContext *ctx) {
+  GRect b = layer_get_bounds(layer);
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, b, 0, GCornerNone);
+#ifndef MTA_FAKE
+  if (s_error > 0) return;
+#endif
+  if (!s_have_bundle) return;
+  hero_draw(ctx, b, &s_bundle, s_line, s_dir, time(NULL));
+}
+static void window_load(Window *w) {
+  Layer *root = window_get_root_layer(w);
+  GRect b = layer_get_unobstructed_bounds(root);
+  s_canvas = layer_create(b);
+  layer_set_update_proc(s_canvas, canvas_update);
+  layer_add_child(root, s_canvas);
+}
+static void window_unload(Window *w) { layer_destroy(s_canvas); }
+static void render_dispatch(void) { if (s_canvas) layer_mark_dirty(s_canvas); }
 
 static void init(void) {
   load_cached_bundle();
@@ -64,6 +83,26 @@ static void init(void) {
 
   app_message_register_inbox_received(inbox_received);
   app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
+
+#ifdef MTA_FAKE
+  {
+    memset(&s_bundle, 0, sizeof(s_bundle));
+    s_bundle.version = 1;
+    s_bundle.epochBase = time(NULL);
+    strncpy(s_bundle.station, "Astoria-Ditmars Blvd", sizeof(s_bundle.station) - 1);
+    s_bundle.nLines = 1;
+    LineView *L = &s_bundle.lines[0];
+    L->label[0] = 'N'; L->label[1] = 0; L->label[2] = 0;
+    L->r = 252; L->g = 204; L->b = 10;
+    L->nDirs = 1;
+    DirView *D = &L->dirs[0];
+    memcpy(D->dest, "Astoria-Ditmars Blvd", sizeof("Astoria-Ditmars Blvd"));
+    D->n = 4;
+    D->delta[0] = 120; D->delta[1] = 480; D->delta[2] = 840; D->delta[3] = 1260;
+    s_have_bundle = true;
+    render_dispatch();
+  }
+#endif
 }
 static void deinit(void) { window_destroy(s_window); }
 int main(void) { init(); app_event_loop(); deinit(); }
