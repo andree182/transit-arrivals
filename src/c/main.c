@@ -2,6 +2,7 @@
 #include <string.h>
 #include "bundle.h"
 #include "hero.h"
+#include "states.h"
 
 #define PERSIST_BUNDLE 1
 #define PERSIST_USE_NEAREST 2
@@ -59,11 +60,21 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, b, 0, GCornerNone);
-  // A cached bundle always wins: when offline/stale we keep showing the
-  // last-known arrivals rather than blanking. Loading / error-only screens
-  // (no bundle yet) are drawn in Task 11.
-  if (!s_have_bundle) return;
+
+  if (s_error == 1) { states_draw_message(ctx, b, "Location off", "Open settings to pick a station"); return; }
+  if (s_error == 2) { states_draw_message(ctx, b, "No station", "Couldn't find a station here"); return; }
+  if (s_error == 4) { states_draw_message(ctx, b, "No trains", "Nothing scheduled right now"); return; }
+  if (s_error == 3 && !s_have_bundle) { states_draw_message(ctx, b, "Offline", "Can't reach phone"); return; }
+  if (!s_have_bundle) { states_draw_message(ctx, b, "Loading", "Finding your station..."); return; }
+
   hero_draw(ctx, b, &s_bundle, s_line, s_dir, time(NULL));
+
+  // Offline with cached data: keep showing arrivals, badge them stale if old.
+  if (s_error == 3 && (int)(time(NULL)) - (int)s_bundle.epochBase > 120) {
+    graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorYellow, GColorWhite));
+    graphics_draw_text(ctx, "STALE", fonts_get_system_font(FONT_KEY_GOTHIC_14),
+      GRect(0, 2, b.size.w - 4, 16), GTextOverflowModeFill, GTextAlignmentRight, NULL);
+  }
 }
 static void window_load(Window *w) {
   Layer *root = window_get_root_layer(w);
