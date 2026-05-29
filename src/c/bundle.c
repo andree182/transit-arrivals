@@ -27,6 +27,7 @@ bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
       memcpy(D->dest, p + i, 20); D->dest[20] = 0; i += 20;
       D->n = p[i++];
       if (D->n > MAX_ARR) D->n = MAX_ARR;
+      if (i + (size_t)D->n * 2 > len) return false;
       for (int a = 0; a < D->n; a++) { D->delta[a] = rd_u16(p + i); i += 2; }
     }
   }
