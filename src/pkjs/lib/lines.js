@@ -1,4 +1,4 @@
-var BASE = 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeed/nyct/gtfs';
+var BASE = 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs';
 // group key -> URL suffix ('' for the 1-7/S group)
 var GROUPS = {
   '123456': '', '7': '', 's': '',
