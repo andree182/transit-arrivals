@@ -24,8 +24,8 @@ function refreshFor(station) {
   if (!pending) return sendError(2);
   urls.forEach(function (url) {
     fetchFeed(url, function (err, buf) {
-      if (err) { failed++; } else {
-        try { rows = rows.concat(gtfsrt.extractStopTimes(buf)); } catch (e) { failed++; }
+      if (err) { failed++; console.log('[mta] feed FAIL ' + err.message + ' ' + url); } else {
+        try { rows = rows.concat(gtfsrt.extractStopTimes(buf)); } catch (e) { failed++; console.log('[mta] parse EXC ' + e.message + ' ' + url); }
       }
       if (--pending === 0) {
         if (failed === urls.length) return sendError(3);          // all feeds failed
@@ -48,7 +48,7 @@ function handleRequest(msg) {
         var st = stations.nearestStation(p.coords.latitude, p.coords.longitude);
         if (st) refreshFor(st); else sendError(2);
       },
-      function () { sendError(1); },                                // location unavailable
+      function (e) { console.log('[mta] geo FAIL ' + (e && e.message)); sendError(1); },
       { timeout: 15000, maximumAge: 60000 }
     );
   } else if (msg.StationId) {
