@@ -6,6 +6,7 @@
 
 #define PERSIST_BUNDLE 1
 #define PERSIST_SEL    5
+#define PERSIST_NEAREST_POS 6
 
 static Window *s_window;
 static Layer *s_canvas;
@@ -14,7 +15,8 @@ static Bundle s_bundle;
 static bool s_have_bundle = false;
 static int s_error = -1;        // -1 none; 0 ready; 1 no-loc; 2 bad-station; 3 offline; 4 no-trains
 static uint8_t s_line = 0, s_dir = 0;
-static uint8_t s_sel = 0;       // 0 = Nearest, 1..N = favorites_get(s_sel-1)
+static uint8_t s_sel = 0;       // ring index: 0..ring_len()-1
+static uint8_t s_nearest_pos = 0; // 0..favorites_count() = Nearest slot; 255 = off
 static bool s_switching = false;// true between a ring switch and the next bundle
 static char s_hint[FAV_NAME_LEN];
 static Window *s_settings;
@@ -32,6 +34,42 @@ static void render_dispatch(void);
 static void open_settings(ClickRecognizerRef r, void *c);
 static void open_manage(void);
 
+// The ring is favorites in stored order with the Nearest slot inserted at
+// s_nearest_pos. With no favorites, Nearest is forced on so the ring is never
+// empty.
+static bool nearest_on(void) {
+  return s_nearest_pos != 255 || favorites_count() == 0;
+}
+static uint8_t nearest_idx(void) {
+  if (!nearest_on()) return 255;
+  uint8_t p = (s_nearest_pos == 255) ? 0 : s_nearest_pos;
+  if (p > favorites_count()) p = favorites_count();
+  return p;
+}
+static uint8_t ring_len(void) {
+  return favorites_count() + (nearest_on() ? 1 : 0);
+}
+static bool ring_is_nearest(uint8_t ring_idx) {
+  return nearest_on() && ring_idx == nearest_idx();
+}
+// Favorite array index for a NON-Nearest ring slot (guard with ring_is_nearest).
+static uint8_t ring_fav_index(uint8_t ring_idx) {
+  uint8_t ni = nearest_idx();
+  if (!nearest_on() || ring_idx < ni) return ring_idx;
+  return ring_idx - 1;
+}
+// Ring index that currently holds favorite j (inverse of ring_fav_index).
+static uint8_t fav_ring_index(uint8_t fav_j) {
+  uint8_t ni = nearest_idx();
+  if (!nearest_on() || fav_j < ni) return fav_j;
+  return fav_j + 1;
+}
+static void clamp_sel(void) {
+  uint8_t rl = ring_len();
+  if (rl == 0) { s_sel = 0; return; }
+  if (s_sel >= rl) s_sel = rl - 1;
+}
+
 // Settings rows are dynamic: Manage is hidden when there are no favorites.
 //   count==0: 0=Add, 1=Refresh
 //   count>0 : 0=Add, 1=Manage, 2=Refresh
@@ -45,10 +83,10 @@ static void request_refresh(void) {
   DictionaryIterator *out;
   if (app_message_outbox_begin(&out) != APP_MSG_OK) return;
   dict_write_uint8(out, MESSAGE_KEY_Request, 1);
-  if (s_sel == 0 || favorites_count() == 0) {
+  if (ring_is_nearest(s_sel)) {
     dict_write_uint8(out, MESSAGE_KEY_UseNearest, 1);
   } else {
-    const Fav *f = favorites_get(s_sel - 1);
+    const Fav *f = favorites_get(ring_fav_index(s_sel));
     if (f) dict_write_cstring(out, MESSAGE_KEY_StationId, f->id);
     else   dict_write_uint8(out, MESSAGE_KEY_UseNearest, 1);
   }
@@ -87,8 +125,8 @@ static void menu_select(MenuLayer *m, MenuIndex *idx, void *c) {
     case ROW_ADD:
       if (s_have_bundle && favorites_index_of(s_bundle.id) < 0 &&
           favorites_add(s_bundle.id, s_bundle.station)) {
-        // If we were on Nearest, jump the ring to the just-added favorite.
-        if (s_sel == 0) s_sel = favorites_count();
+        // Jump the ring to the just-added favorite (the new last entry).
+        s_sel = fav_ring_index(favorites_count() - 1);
         persist_write_int(PERSIST_SEL, s_sel);
       }
       menu_layer_reload_data(m);
@@ -118,18 +156,16 @@ static void settings_load(Window *w) {
 static void settings_unload(Window *w) { menu_layer_destroy(s_menu); }
 
 static void confirm_yes(ClickRecognizerRef r, void *c) {
-  favorites_remove(s_confirm_row);
-  // Keep the ring pointed at the same station where possible.
-  if (s_sel > 0) {
-    uint8_t fi = s_sel - 1;
-    if (fi == s_confirm_row)      s_sel = (s_sel > 1) ? s_sel - 1 : 0;
-    else if (fi > s_confirm_row)  s_sel--;
-    if (s_sel > favorites_count()) s_sel = favorites_count();
-  }
+  uint8_t removed = s_confirm_row;                     // favorite array index
+  favorites_remove(removed);
+  // The Nearest slot collapses by one if it sat after the removed favorite.
+  if (s_nearest_pos != 255 && s_nearest_pos > removed) s_nearest_pos--;
+  persist_write_int(PERSIST_NEAREST_POS, s_nearest_pos);
+  clamp_sel();
   persist_write_int(PERSIST_SEL, s_sel);
   s_move_row = -1;
   window_stack_pop(true);                              // pop confirm
-  if (favorites_count() == 0) window_stack_pop(true);  // nothing left to manage
+  if (favorites_count() == 0 && !nearest_on()) window_stack_pop(true);
   else menu_layer_reload_data(s_manage_menu);
 }
 static void confirm_click_config(void *ctx) {
@@ -161,24 +197,48 @@ static void confirm_unload(Window *w) {
   text_layer_destroy(s_confirm_hint);
 }
 
-static uint16_t manage_num_rows(MenuLayer *m, uint16_t s, void *c) { return favorites_count(); }
+static uint16_t manage_num_rows(MenuLayer *m, uint16_t s, void *c) { return ring_len(); }
 
 static void manage_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void *c) {
-  const Fav *f = favorites_get(idx->row);
+  bool moving = (s_move_row == (int)idx->row);
+  if (ring_is_nearest(idx->row)) {
+    const char *sub = moving ? "Up/Down move · SELECT drop" : "Auto by GPS · hold SEL: off";
+    menu_cell_basic_draw(ctx, cell, "Nearest", sub, NULL);
+    return;
+  }
+  const Fav *f = favorites_get(ring_fav_index(idx->row));
   if (!f) return;
-  const char *sub = (s_move_row == (int)idx->row) ? "Up/Down move · SELECT drop" : NULL;
+  const char *sub = moving ? "Up/Down move · SELECT drop" : NULL;
   menu_cell_basic_draw(ctx, cell, f->name, sub, NULL);
+}
+
+// Move the ring slot at row by dir (+1 down / -1 up). Updates favorite order or
+// s_nearest_pos, persists, and returns the slot's new row. No-op at the ends.
+static int ring_move(int row, int dir) {
+  int target = row + dir;
+  if (target < 0 || target >= (int)ring_len()) return row;
+  bool row_is_near = ring_is_nearest((uint8_t)row);
+  bool tgt_is_near = ring_is_nearest((uint8_t)target);
+  if (row_is_near) {
+    s_nearest_pos = (uint8_t)((int)nearest_idx() + dir);
+    persist_write_int(PERSIST_NEAREST_POS, s_nearest_pos);
+  } else if (tgt_is_near) {
+    s_nearest_pos = (uint8_t)((int)nearest_idx() - dir);
+    persist_write_int(PERSIST_NEAREST_POS, s_nearest_pos);
+  } else {
+    favorites_swap(ring_fav_index((uint8_t)row), ring_fav_index((uint8_t)target));
+  }
+  if (s_sel == (uint8_t)row)         s_sel = (uint8_t)target;
+  else if (s_sel == (uint8_t)target) s_sel = (uint8_t)row;
+  persist_write_int(PERSIST_SEL, s_sel);
+  return target;
 }
 
 static void manage_up(ClickRecognizerRef r, void *c) {
   if (s_move_row < 0) {
     menu_layer_set_selected_next(s_manage_menu, true, MenuRowAlignCenter, true);
-  } else if (s_move_row > 0) {
-    favorites_swap(s_move_row, s_move_row - 1);
-    if (s_sel == (uint8_t)(s_move_row + 1)) s_sel--;
-    else if (s_sel == (uint8_t)s_move_row)  s_sel++;
-    s_move_row--;
-    persist_write_int(PERSIST_SEL, s_sel);
+  } else {
+    s_move_row = ring_move(s_move_row, -1);
     menu_layer_set_selected_index(s_manage_menu, MenuIndex(0, s_move_row), MenuRowAlignCenter, false);
     menu_layer_reload_data(s_manage_menu);
   }
@@ -186,12 +246,8 @@ static void manage_up(ClickRecognizerRef r, void *c) {
 static void manage_down(ClickRecognizerRef r, void *c) {
   if (s_move_row < 0) {
     menu_layer_set_selected_next(s_manage_menu, false, MenuRowAlignCenter, true);
-  } else if (s_move_row + 1 < (int)favorites_count()) {
-    favorites_swap(s_move_row, s_move_row + 1);
-    if (s_sel == (uint8_t)(s_move_row + 1)) s_sel++;
-    else if (s_sel == (uint8_t)(s_move_row + 2)) s_sel--;
-    s_move_row++;
-    persist_write_int(PERSIST_SEL, s_sel);
+  } else {
+    s_move_row = ring_move(s_move_row, +1);
     menu_layer_set_selected_index(s_manage_menu, MenuIndex(0, s_move_row), MenuRowAlignCenter, false);
     menu_layer_reload_data(s_manage_menu);
   }
@@ -203,10 +259,18 @@ static void manage_select(ClickRecognizerRef r, void *c) {
   menu_layer_reload_data(s_manage_menu);
 }
 static void manage_remove(ClickRecognizerRef r, void *c) {
-  if (s_move_row >= 0) return;                 // no removing mid-move
+  if (s_move_row >= 0) return;                 // no actions mid-move
   MenuIndex idx = menu_layer_get_selected_index(s_manage_menu);
-  if (idx.row >= favorites_count()) return;
-  s_confirm_row = idx.row;
+  if (ring_is_nearest(idx.row)) {
+    if (favorites_count() == 0) return;        // ring would be empty; keep Nearest
+    s_nearest_pos = 255;                       // disable Nearest
+    persist_write_int(PERSIST_NEAREST_POS, s_nearest_pos);
+    clamp_sel();
+    persist_write_int(PERSIST_SEL, s_sel);
+    menu_layer_reload_data(s_manage_menu);
+    return;
+  }
+  s_confirm_row = ring_fav_index(idx.row);     // favorite array index to remove
   window_stack_push(s_confirm, true);
 }
 static void manage_click_config(void *ctx) {
@@ -244,12 +308,13 @@ static void open_settings(ClickRecognizerRef r, void *c) {
 }
 
 static void switch_to(uint8_t sel) {
-  uint8_t n = favorites_count();
-  s_sel = sel % (n + 1);            // wrap across [Nearest, fav0..fav(n-1)]
+  uint8_t rl = ring_len();
+  if (rl == 0) return;
+  s_sel = sel % rl;
   s_line = 0; s_dir = 0;
-  if (s_sel == 0) snprintf(s_hint, sizeof(s_hint), "Nearest");
+  if (ring_is_nearest(s_sel)) snprintf(s_hint, sizeof(s_hint), "Nearest");
   else {
-    const Fav *f = favorites_get(s_sel - 1);
+    const Fav *f = favorites_get(ring_fav_index(s_sel));
     snprintf(s_hint, sizeof(s_hint), "%s", f ? f->name : "Nearest");
   }
   s_switching = true;
@@ -260,8 +325,8 @@ static void switch_to(uint8_t sel) {
 }
 static void ring_next(ClickRecognizerRef r, void *c) { switch_to(s_sel + 1); }
 static void ring_prev(ClickRecognizerRef r, void *c) {
-  uint8_t n = favorites_count();
-  switch_to((uint8_t)((s_sel + n) % (n + 1)));
+  uint8_t rl = ring_len();
+  switch_to((uint8_t)((s_sel + rl - 1) % rl));
 }
 
 static void next_line(ClickRecognizerRef r, void *c) {
@@ -321,7 +386,7 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   graphics_fill_rect(ctx, b, 0, GCornerNone);
 
   if (s_switching) {
-    states_draw_message(ctx, b, s_hint, s_sel == 0 ? "Locating…" : "Loading…");
+    states_draw_message(ctx, b, s_hint, ring_is_nearest(s_sel) ? "Locating…" : "Loading…");
     return;
   }
 
@@ -333,10 +398,10 @@ static void canvas_update(Layer *layer, GContext *ctx) {
 
   hero_draw(ctx, b, &s_bundle, s_line, s_dir, time(NULL));
 
-  // Ring position, e.g. "2/4" (1 = Nearest). Shown only when favorites exist.
-  if (favorites_count() > 0) {
+  // Ring position, e.g. "2/4". Shown only when the ring has more than one slot.
+  if (ring_len() > 1) {
     static char pos[12];
-    snprintf(pos, sizeof(pos), "%d/%d", (int)s_sel + 1, (int)favorites_count() + 1);
+    snprintf(pos, sizeof(pos), "%d/%d", (int)s_sel + 1, (int)ring_len());
     graphics_context_set_text_color(ctx, GColorLightGray);
     int pos_inset = PBL_IF_ROUND_ELSE(40, 4);
     graphics_draw_text(ctx, pos, fonts_get_system_font(FONT_KEY_GOTHIC_14),
@@ -366,8 +431,10 @@ static void poll_cb(void *ctx) { request_refresh(); s_poll = app_timer_register(
 
 static void init(void) {
   favorites_load();
+  s_nearest_pos = persist_exists(PERSIST_NEAREST_POS)
+    ? (uint8_t)persist_read_int(PERSIST_NEAREST_POS) : 0;
   s_sel = persist_exists(PERSIST_SEL) ? (uint8_t)persist_read_int(PERSIST_SEL) : 0;
-  if (s_sel > favorites_count()) s_sel = 0;
+  clamp_sel();
   load_cached_bundle();
   s_window = window_create();
   window_set_background_color(s_window, GColorBlack);
