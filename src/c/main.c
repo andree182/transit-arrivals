@@ -469,6 +469,43 @@ static void render_dispatch(void) { if (s_canvas) layer_mark_dirty(s_canvas); }
 static void tick_handler(struct tm *t, TimeUnits u) { render_dispatch(); }
 static void poll_cb(void *ctx) { request_refresh(); s_poll = app_timer_register(30000, poll_cb, NULL); }
 
+// AppGlance: on exit, show the soonest upcoming train for the last-viewed
+// station in the launcher tile. The slice expires at that train's departure so
+// the launcher clears it automatically. Baked minutes are as-of-exit (a glance
+// is approximate by nature); the expiration keeps it from outliving the train.
+static char   s_glance_buf[64];
+static time_t s_glance_exp;
+static void glance_reload_cb(AppGlanceReloadSession *session, size_t limit, void *ctx) {
+  if (limit < 1) return;
+  AppGlanceSlice slice = {
+    .layout = { .icon = APP_GLANCE_SLICE_DEFAULT_ICON, .subtitle_template_string = s_glance_buf },
+    .expiration_time = s_glance_exp,
+  };
+  app_glance_add_slice(session, slice);
+}
+static void publish_glance(void) {
+  if (!s_have_bundle) { app_glance_reload(NULL, NULL); return; }
+  time_t now = time(NULL), best = 0;
+  const char *blabel = NULL;
+  for (uint8_t li = 0; li < s_bundle.nLines; li++) {
+    const LineView *L = &s_bundle.lines[li];
+    for (uint8_t di = 0; di < L->nDirs; di++) {
+      const DirView *D = &L->dirs[di];
+      for (uint8_t a = 0; a < D->n; a++) {
+        time_t t = (time_t)s_bundle.epochBase + D->delta[a];
+        if (t <= now) continue;
+        if (best == 0 || t < best) { best = t; blabel = L->label; }
+      }
+    }
+  }
+  if (best == 0) { app_glance_reload(NULL, NULL); return; }
+  int mins = (int)(best - now) / 60;
+  if (mins <= 0) snprintf(s_glance_buf, sizeof(s_glance_buf), "%s · Now — %s", blabel, s_bundle.station);
+  else           snprintf(s_glance_buf, sizeof(s_glance_buf), "%s · %d min — %s", blabel, mins, s_bundle.station);
+  s_glance_exp = best;
+  app_glance_reload(glance_reload_cb, NULL);
+}
+
 static void init(void) {
   favorites_load();
   s_nearest_pos = persist_exists(PERSIST_NEAREST_POS)
@@ -500,6 +537,7 @@ static void init(void) {
   s_poll = app_timer_register(30000, poll_cb, NULL);
 }
 static void deinit(void) {
+  publish_glance();
   tick_timer_service_unsubscribe();
   if (s_poll) app_timer_cancel(s_poll);
   window_destroy(s_window);
