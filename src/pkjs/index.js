@@ -3,8 +3,18 @@ var linesLib = require('./lib/lines');
 var gtfsrt = require('./lib/gtfsrt');
 var arrivalsLib = require('./lib/arrivals');
 var bundleLib = require('./lib/bundle');
+var favsync = require('./lib/favsync');
+var config = require('./lib/config');
 
 function nowSecs() { return Math.floor(Date.now() / 1000); }
+
+function loadMirror() {
+  try { return JSON.parse(localStorage.getItem('mta_favs')) || { nearestPos: 0, favs: [] }; }
+  catch (e) { return { nearestPos: 0, favs: [] }; }
+}
+function saveMirror(obj) {
+  try { localStorage.setItem('mta_favs', JSON.stringify(obj)); } catch (e) {}
+}
 
 function fetchFeed(url, cb) {
   var xhr = new XMLHttpRequest();
@@ -57,5 +67,32 @@ function handleRequest(msg) {
   }
 }
 
-Pebble.addEventListener('ready', function () { Pebble.sendAppMessage({ ErrorCode: 0 }); });
-Pebble.addEventListener('appmessage', function (e) { handleRequest(e.payload); });
+Pebble.addEventListener('ready', function () {
+  Pebble.sendAppMessage({ ErrorCode: 0 });
+  Pebble.sendAppMessage({ FavReq: 1 });
+});
+Pebble.addEventListener('appmessage', function (e) {
+  if (e.payload && e.payload.FavSync) {
+    saveMirror(favsync.decodeFavList(e.payload.FavSync));
+    return;
+  }
+  handleRequest(e.payload);
+});
+
+Pebble.addEventListener('showConfiguration', function () {
+  var m = loadMirror();
+  var db = stations._db.map(function (s) {
+    return { id: s.id, name: s.name, lines: s.lines };
+  });
+  var html = config.buildConfigHtml(m.nearestPos, m.favs, db);
+  Pebble.openURL('data:text/html,' + encodeURIComponent(html));
+});
+
+Pebble.addEventListener('webviewclosed', function (e) {
+  if (!e || !e.response) return;
+  var payload;
+  try { payload = JSON.parse(decodeURIComponent(e.response)); } catch (err) { return; }
+  if (!payload || !payload.favs) return;
+  var bytes = favsync.encodeFavList(payload.nearestPos, payload.favs);
+  Pebble.sendAppMessage({ FavSet: Array.prototype.slice.call(bytes) });
+});
