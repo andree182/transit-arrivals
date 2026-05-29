@@ -73,9 +73,9 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   graphics_fill_circle(ctx, disc, r);
 
   // The disc scales with the screen but system fonts don't, so the roundel
-  // letter looks lost on emery/gabbro. Step up to the largest bold face once
-  // the disc grows past basalt/chalk.
-  bool bigLetter = (r >= 32);
+  // letter looks lost on the bigger displays. Step up to the largest bold face
+  // once the disc grows past basalt's radius.
+  bool bigLetter = (r >= 28);
   GFont lf = fonts_get_system_font(bigLetter ? FONT_KEY_BITHAM_42_BOLD : FONT_KEY_BITHAM_30_BLACK);
   GSize ls = graphics_text_layout_get_content_size(L->label, lf,
                GRect(0, 0, 2 * r + 8, 2 * r + 8), GTextOverflowModeFill, GTextAlignmentCenter);
