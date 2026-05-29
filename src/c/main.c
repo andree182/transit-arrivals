@@ -8,6 +8,7 @@
 
 static Window *s_window;
 static Layer *s_canvas;
+static AppTimer *s_poll;
 static Bundle s_bundle;
 static bool s_have_bundle = false;
 static int s_error = -1;        // -1 none; 0 ready; 1 no-loc; 2 bad-station; 3 offline; 4 no-trains
@@ -74,6 +75,9 @@ static void window_load(Window *w) {
 static void window_unload(Window *w) { layer_destroy(s_canvas); }
 static void render_dispatch(void) { if (s_canvas) layer_mark_dirty(s_canvas); }
 
+static void tick_handler(struct tm *t, TimeUnits u) { render_dispatch(); }
+static void poll_cb(void *ctx) { request_refresh(); s_poll = app_timer_register(30000, poll_cb, NULL); }
+
 static void init(void) {
   load_cached_bundle();
   s_window = window_create();
@@ -83,6 +87,9 @@ static void init(void) {
 
   app_message_register_inbox_received(inbox_received);
   app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
+
+  tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
+  s_poll = app_timer_register(30000, poll_cb, NULL);
 
 #ifdef MTA_FAKE
   {
@@ -104,5 +111,9 @@ static void init(void) {
   }
 #endif
 }
-static void deinit(void) { window_destroy(s_window); }
+static void deinit(void) {
+  tick_timer_service_unsubscribe();
+  if (s_poll) app_timer_cancel(s_poll);
+  window_destroy(s_window);
+}
 int main(void) { init(); app_event_loop(); deinit(); }
