@@ -44,7 +44,10 @@ function sendError(code) { Pebble.sendAppMessage({ ErrorCode: code }); }
 function handleRequest(msg) {
   if (msg.UseNearest) {
     navigator.geolocation.getCurrentPosition(
-      function (p) { refreshFor(stations.nearestStation(p.coords.latitude, p.coords.longitude)); },
+      function (p) {
+        var st = stations.nearestStation(p.coords.latitude, p.coords.longitude);
+        if (st) refreshFor(st); else sendError(2);
+      },
       function () { sendError(1); },                                // location unavailable
       { timeout: 15000, maximumAge: 60000 }
     );

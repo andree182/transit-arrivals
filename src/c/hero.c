@@ -26,6 +26,7 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   const LineView *L = &b->lines[line];
   if (dir >= L->nDirs) dir = 0;
   const DirView *D = &L->dirs[dir];
+  if (D->n == 0) return;
 
   float SX = bounds.size.w / REF_W, SY = bounds.size.h / REF_H;
   graphics_context_set_antialiased(ctx, true);
