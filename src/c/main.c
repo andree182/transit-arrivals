@@ -294,6 +294,8 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
       s_have_bundle = true; s_error = -1; s_line = 0; s_dir = 0;
       s_switching = false;
       persist_write_data(PERSIST_BUNDLE, bun->value->data, bun->length);
+      int fi = favorites_index_of(s_bundle.id);
+      if (fi >= 0) favorites_update_name((uint8_t)fi, s_bundle.station);
     }
   } else if (err) {
     int code = (int)err->value->uint8;

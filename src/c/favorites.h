@@ -27,3 +27,7 @@ void favorites_remove(uint8_t i);
 
 // Swaps favorites a and b in RAM and persist. No-op if either is oob.
 void favorites_swap(uint8_t a, uint8_t b);
+
+// Updates favorite i's stored name (RAM + persist). No-op if i is oob or the
+// name is unchanged. Returns true if a write occurred.
+bool favorites_update_name(uint8_t i, const char *name);

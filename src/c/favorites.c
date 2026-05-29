@@ -120,3 +120,12 @@ void favorites_swap(uint8_t a, uint8_t b) {
   Fav t = s_favs[a]; s_favs[a] = s_favs[b]; s_favs[b] = t;
   write_entry(a); write_entry(b);
 }
+
+bool favorites_update_name(uint8_t i, const char *name) {
+  if (i >= s_count || !name) return false;
+  if (strncmp(s_favs[i].name, name, FAV_NAME_LEN) == 0) return false;
+  strncpy(s_favs[i].name, name, FAV_NAME_LEN - 1);
+  s_favs[i].name[FAV_NAME_LEN - 1] = '\0';
+  write_entry(i);
+  return true;
+}
