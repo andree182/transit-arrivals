@@ -243,6 +243,27 @@ static void open_settings(ClickRecognizerRef r, void *c) {
   window_stack_push(s_settings, true);
 }
 
+static void switch_to(uint8_t sel) {
+  uint8_t n = favorites_count();
+  s_sel = sel % (n + 1);            // wrap across [Nearest, fav0..fav(n-1)]
+  s_line = 0; s_dir = 0;
+  if (s_sel == 0) snprintf(s_hint, sizeof(s_hint), "Nearest");
+  else {
+    const Fav *f = favorites_get(s_sel - 1);
+    snprintf(s_hint, sizeof(s_hint), "%s", f ? f->name : "Nearest");
+  }
+  s_switching = true;
+  s_error = -1;
+  persist_write_int(PERSIST_SEL, s_sel);
+  request_refresh();
+  render_dispatch();
+}
+static void ring_next(ClickRecognizerRef r, void *c) { switch_to(s_sel + 1); }
+static void ring_prev(ClickRecognizerRef r, void *c) {
+  uint8_t n = favorites_count();
+  switch_to((uint8_t)((s_sel + n) % (n + 1)));
+}
+
 static void next_line(ClickRecognizerRef r, void *c) {
   if (!s_have_bundle || s_bundle.nLines == 0) return;
   s_line = (s_line + 1) % s_bundle.nLines; s_dir = 0; render_dispatch();
@@ -261,6 +282,8 @@ static void click_config(void *ctx) {
   window_single_click_subscribe(BUTTON_ID_DOWN, next_line);
   window_single_click_subscribe(BUTTON_ID_SELECT, flip_dir);
   window_long_click_subscribe(BUTTON_ID_SELECT, 0, open_settings, NULL);
+  window_long_click_subscribe(BUTTON_ID_UP, 0, ring_prev, NULL);
+  window_long_click_subscribe(BUTTON_ID_DOWN, 0, ring_next, NULL);
 }
 
 static void inbox_received(DictionaryIterator *iter, void *ctx) {
@@ -269,12 +292,13 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
   if (bun) {
     if (bundle_decode(bun->value->data, bun->length, &s_bundle)) {
       s_have_bundle = true; s_error = -1; s_line = 0; s_dir = 0;
+      s_switching = false;
       persist_write_data(PERSIST_BUNDLE, bun->value->data, bun->length);
     }
   } else if (err) {
     int code = (int)err->value->uint8;
     if (code == 0) { request_refresh(); }
-    else { s_error = code; }
+    else { s_error = code; s_switching = false; }
   }
   render_dispatch();
 }
@@ -294,6 +318,11 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, b, 0, GCornerNone);
 
+  if (s_switching) {
+    states_draw_message(ctx, b, s_hint, s_sel == 0 ? "Locating…" : "Loading…");
+    return;
+  }
+
   if (s_error == 1) { states_draw_message(ctx, b, "Location off", "Open settings to pick a station"); return; }
   if (s_error == 2) { states_draw_message(ctx, b, "No station", "Couldn't find a station here"); return; }
   if (s_error == 4) { states_draw_message(ctx, b, "No trains", "Nothing scheduled right now"); return; }
@@ -301,6 +330,16 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   if (!s_have_bundle) { states_draw_message(ctx, b, "Loading", "Finding your station..."); return; }
 
   hero_draw(ctx, b, &s_bundle, s_line, s_dir, time(NULL));
+
+  // Ring position, e.g. "2/4" (1 = Nearest). Shown only when favorites exist.
+  if (favorites_count() > 0) {
+    static char pos[12];
+    snprintf(pos, sizeof(pos), "%d/%d", (int)s_sel + 1, (int)favorites_count() + 1);
+    graphics_context_set_text_color(ctx, GColorLightGray);
+    int pos_inset = PBL_IF_ROUND_ELSE(40, 4);
+    graphics_draw_text(ctx, pos, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+      GRect(pos_inset, 2, 40, 16), GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  }
 
   // Offline with cached data: keep showing arrivals, badge them stale if old.
   if (s_error == 3 && (int)(time(NULL)) - (int)s_bundle.epochBase > 120) {
