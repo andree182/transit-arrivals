@@ -21,7 +21,8 @@
       "ErrorCode",
       "FavSync",
       "FavSet",
-      "FavReq"
+      "FavReq",
+      "Alerts"
     ],
     "resources": { "media": [] }
   }

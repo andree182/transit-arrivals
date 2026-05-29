@@ -9,6 +9,9 @@
 #define PERSIST_SEL    5
 #define PERSIST_NEAREST_POS 6
 
+// Upward warning triangle for the hero alert badge (16x14).
+static const GPathInfo WARN_TRI = { 3, (GPoint[]){ {8, 0}, {16, 14}, {0, 14} } };
+
 static Window *s_window;
 static Layer *s_canvas;
 static AppTimer *s_poll;
@@ -20,6 +23,8 @@ static uint8_t s_sel = 0;       // ring index: 0..ring_len()-1
 static uint8_t s_nearest_pos = 0; // 0..favorites_count() = Nearest slot; 255 = off
 static bool s_switching = false;// true between a ring switch and the next bundle
 static char s_hint[FAV_NAME_LEN];
+static char s_alerts[340];       // active service-alert headlines, "\n"-joined ("" = none)
+static GPath *s_warn_path;       // warning-triangle badge on the hero screen
 static Window *s_settings;
 static MenuLayer *s_menu;
 
@@ -34,7 +39,13 @@ static TextLayer *s_confirm_msg, *s_confirm_hint;
 static void render_dispatch(void);
 static void open_settings(ClickRecognizerRef r, void *c);
 static void open_manage(void);
+static void open_alerts(void);
 static void push_favsync(void);
+
+// Service-alerts screen.
+static Window     *s_alerts_win;
+static ScrollLayer *s_alerts_scroll;
+static TextLayer  *s_alerts_text;
 
 // The ring is favorites in stored order with the Nearest slot inserted at
 // s_nearest_pos. With no favorites, Nearest is forced on so the ring is never
@@ -72,13 +83,24 @@ static void clamp_sel(void) {
   if (s_sel >= rl) s_sel = rl - 1;
 }
 
-// Settings rows are dynamic: Manage is hidden when there are no favorites.
-//   count==0: 0=Add, 1=Refresh
-//   count>0 : 0=Add, 1=Manage, 2=Refresh
-typedef enum { ROW_ADD, ROW_MANAGE, ROW_REFRESH } SettingsRow;
+static bool has_alerts(void) { return s_alerts[0] != '\0'; }
+
+// Settings rows are dynamic, in order: Add, [Manage if favorites],
+// [Alerts if active], Refresh.
+typedef enum { ROW_ADD, ROW_MANAGE, ROW_ALERTS, ROW_REFRESH } SettingsRow;
+static uint8_t settings_rows(SettingsRow *order) {
+  uint8_t n = 0;
+  order[n++] = ROW_ADD;
+  if (favorites_count() > 0) order[n++] = ROW_MANAGE;
+  if (has_alerts())          order[n++] = ROW_ALERTS;
+  order[n++] = ROW_REFRESH;
+  return n;
+}
 static SettingsRow settings_row(uint16_t r) {
-  if (favorites_count() == 0) return r == 0 ? ROW_ADD : ROW_REFRESH;
-  return r == 0 ? ROW_ADD : (r == 1 ? ROW_MANAGE : ROW_REFRESH);
+  SettingsRow order[4];
+  uint8_t n = settings_rows(order);
+  if (r >= n) r = n - 1;
+  return order[r];
 }
 
 static void request_refresh(void) {
@@ -106,7 +128,8 @@ static void push_favsync(void) {
 }
 
 static uint16_t menu_num_rows(MenuLayer *m, uint16_t section, void *ctx) {
-  return favorites_count() == 0 ? 2 : 3;
+  SettingsRow order[4];
+  return settings_rows(order);
 }
 
 static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void *c) {
@@ -124,6 +147,15 @@ static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void
       static char cnt[16];
       snprintf(cnt, sizeof(cnt), "%d saved", (int)favorites_count());
       menu_cell_basic_draw(ctx, cell, "Manage favorites", cnt, NULL);
+      break;
+    }
+    case ROW_ALERTS: {
+      // Count headlines (one per line) for the subtitle.
+      int lines = s_alerts[0] ? 1 : 0;
+      for (const char *p = s_alerts; *p; p++) if (*p == '\n') lines++;
+      static char sub[20];
+      snprintf(sub, sizeof(sub), "%d active", lines);
+      menu_cell_basic_draw(ctx, cell, "Service alerts", sub, NULL);
       break;
     }
     case ROW_REFRESH:
@@ -146,6 +178,9 @@ static void menu_select(MenuLayer *m, MenuIndex *idx, void *c) {
       break;
     case ROW_MANAGE:
       open_manage();
+      break;
+    case ROW_ALERTS:
+      open_alerts();
       break;
     case ROW_REFRESH:
       request_refresh();
@@ -324,6 +359,28 @@ static void open_manage(void) {
   window_stack_push(s_manage, true);
 }
 
+static void alerts_load(Window *w) {
+  Layer *root = window_get_root_layer(w);
+  GRect b = layer_get_bounds(root);
+  s_alerts_scroll = scroll_layer_create(b);
+  scroll_layer_set_click_config_onto_window(s_alerts_scroll, w);
+  s_alerts_text = text_layer_create(GRect(4, 2, b.size.w - 8, 2000));
+  text_layer_set_background_color(s_alerts_text, GColorClear);
+  text_layer_set_text_color(s_alerts_text, GColorWhite);
+  text_layer_set_font(s_alerts_text, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+  text_layer_set_text(s_alerts_text, s_alerts);
+  GSize used = text_layer_get_content_size(s_alerts_text);
+  text_layer_set_size(s_alerts_text, GSize(b.size.w - 8, used.h + 8));
+  scroll_layer_set_content_size(s_alerts_scroll, GSize(b.size.w, used.h + 16));
+  scroll_layer_add_child(s_alerts_scroll, text_layer_get_layer(s_alerts_text));
+  layer_add_child(root, scroll_layer_get_layer(s_alerts_scroll));
+}
+static void alerts_unload(Window *w) {
+  text_layer_destroy(s_alerts_text);
+  scroll_layer_destroy(s_alerts_scroll);
+}
+static void open_alerts(void) { window_stack_push(s_alerts_win, true); }
+
 static void open_settings(ClickRecognizerRef r, void *c) {
   window_stack_push(s_settings, true);
 }
@@ -333,6 +390,7 @@ static void switch_to(uint8_t sel) {
   if (rl == 0) return;
   s_sel = sel % rl;
   s_line = 0; s_dir = 0;
+  s_alerts[0] = '\0';   // old station's alerts no longer apply
   if (ring_is_nearest(s_sel)) snprintf(s_hint, sizeof(s_hint), "Nearest");
   else {
     const Fav *f = favorites_get(ring_fav_index(s_sel));
@@ -373,6 +431,17 @@ static void click_config(void *ctx) {
 }
 
 static void inbox_received(DictionaryIterator *iter, void *ctx) {
+  Tuple *alerts = dict_find(iter, MESSAGE_KEY_Alerts);
+  if (alerts) {
+    if (alerts->type == TUPLE_CSTRING && alerts->length > 1) {
+      strncpy(s_alerts, alerts->value->cstring, sizeof(s_alerts) - 1);
+      s_alerts[sizeof(s_alerts) - 1] = '\0';
+    } else {
+      s_alerts[0] = '\0';
+    }
+    render_dispatch();
+    return;
+  }
   Tuple *favreq = dict_find(iter, MESSAGE_KEY_FavReq);
   if (favreq) { push_favsync(); return; }
   Tuple *favset = dict_find(iter, MESSAGE_KEY_FavSet);
@@ -448,6 +517,21 @@ static void canvas_update(Layer *layer, GContext *ctx) {
       GRect(pos_inset, 2, 40, 16), GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   }
 
+  // Service-alert badge: a warning triangle top-right when the current station
+  // has active alerts. Details live behind the settings "Service alerts" row.
+  if (s_alerts[0]) {
+    int bx = b.size.w - PBL_IF_ROUND_ELSE(46, 20);
+    int by = PBL_IF_ROUND_ELSE(20, 2);
+    gpath_move_to(s_warn_path, GPoint(bx, by));
+    graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorYellow, GColorWhite));
+    gpath_draw_filled(ctx, s_warn_path);
+    graphics_context_set_stroke_color(ctx, GColorBlack);
+    gpath_draw_outline(ctx, s_warn_path);
+    graphics_context_set_text_color(ctx, GColorBlack);
+    graphics_draw_text(ctx, "!", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+      GRect(bx, by + 1, 16, 15), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  }
+
   // Offline with cached data: keep showing arrivals, badge them stale if old.
   if (s_error == 3 && (int)(time(NULL)) - (int)s_bundle.epochBase > 120) {
     graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorYellow, GColorWhite));
@@ -462,8 +546,9 @@ static void window_load(Window *w) {
   layer_set_update_proc(s_canvas, canvas_update);
   layer_add_child(root, s_canvas);
   window_set_click_config_provider(s_window, click_config);
+  s_warn_path = gpath_create(&WARN_TRI);
 }
-static void window_unload(Window *w) { layer_destroy(s_canvas); }
+static void window_unload(Window *w) { gpath_destroy(s_warn_path); layer_destroy(s_canvas); }
 static void render_dispatch(void) { if (s_canvas) layer_mark_dirty(s_canvas); }
 
 static void tick_handler(struct tm *t, TimeUnits u) { render_dispatch(); }
@@ -530,6 +615,10 @@ static void init(void) {
   window_set_window_handlers(s_confirm, (WindowHandlers){ .load = confirm_load, .unload = confirm_unload });
   window_set_click_config_provider(s_confirm, confirm_click_config);
 
+  s_alerts_win = window_create();
+  window_set_background_color(s_alerts_win, GColorBlack);
+  window_set_window_handlers(s_alerts_win, (WindowHandlers){ .load = alerts_load, .unload = alerts_unload });
+
   app_message_register_inbox_received(inbox_received);
   app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
 
@@ -544,5 +633,6 @@ static void deinit(void) {
   window_destroy(s_settings);
   window_destroy(s_manage);
   window_destroy(s_confirm);
+  window_destroy(s_alerts_win);
 }
 int main(void) { init(); app_event_loop(); deinit(); }

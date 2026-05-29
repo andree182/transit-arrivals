@@ -5,6 +5,9 @@ var arrivalsLib = require('./lib/arrivals');
 var bundleLib = require('./lib/bundle');
 var favsync = require('./lib/favsync');
 var config = require('./lib/config');
+var alertsLib = require('./lib/alerts');
+
+var ALERTS_URL = 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fsubway-alerts.json';
 
 function nowSecs() { return Math.floor(Date.now() / 1000); }
 
@@ -28,7 +31,24 @@ function fetchFeed(url, cb) {
   xhr.send();
 }
 
+function fetchAlerts(station) {
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', ALERTS_URL, true);
+  xhr.onload = function () {
+    var list = [];
+    try {
+      if (xhr.status === 200 && xhr.responseText) {
+        list = alertsLib.extractAlerts(JSON.parse(xhr.responseText), station.lines, nowSecs());
+      }
+    } catch (e) { console.log('[mta] alerts EXC ' + e.message); }
+    Pebble.sendAppMessage({ Alerts: list.join('\n') });
+  };
+  xhr.onerror = function () { Pebble.sendAppMessage({ Alerts: '' }); };
+  xhr.send();
+}
+
 function refreshFor(station) {
+  fetchAlerts(station);
   var urls = linesLib.feedUrls(station.lines);
   var rows = [], pending = urls.length, failed = 0;
   if (!pending) return sendError(2);
