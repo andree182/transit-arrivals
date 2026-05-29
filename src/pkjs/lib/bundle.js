@@ -4,11 +4,12 @@ function putStr(arr, s, n) {
 function putU16(arr, v) { v = v < 0 ? 0 : (v > 65535 ? 65535 : v); arr.push(v & 0xff, (v >> 8) & 0xff); }
 function putU32(arr, v) { arr.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff); }
 
-function encodeBundle(stationName, lines, epochBase, colorFn) {
+function encodeBundle(stationId, stationName, lines, epochBase, colorFn) {
   var b = [];
-  b.push(1);                       // version
+  b.push(2);                       // version
   putU32(b, epochBase);
   putStr(b, stationName, 24);
+  putStr(b, stationId, 11);
   b.push(lines.length & 0xff);
   lines.forEach(function (ln) {
     putStr(b, ln.line, 2);

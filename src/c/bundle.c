@@ -7,11 +7,12 @@ static uint32_t rd_u32(const uint8_t *p) {
 static uint16_t rd_u16(const uint8_t *p) { return (uint16_t)p[0] | ((uint16_t)p[1] << 8); }
 
 bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
-  if (len < 30 || p[0] != 1) return false;
+  if (len < 41 || p[0] != 2) return false;
   size_t i = 0;
   out->version = p[i++];
   out->epochBase = rd_u32(p + i); i += 4;
   memcpy(out->station, p + i, 24); out->station[24] = 0; i += 24;
+  memcpy(out->id, p + i, 11); out->id[11] = 0; i += 11;
   out->nLines = p[i++];
   if (out->nLines > MAX_LINES) out->nLines = MAX_LINES;
   for (int l = 0; l < out->nLines; l++) {

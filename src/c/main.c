@@ -6,6 +6,7 @@
 
 #define PERSIST_BUNDLE 1
 #define PERSIST_USE_NEAREST 2
+#define PERSIST_STATION_ID 3
 
 static Window *s_window;
 static Layer *s_canvas;
@@ -14,8 +15,11 @@ static Bundle s_bundle;
 static bool s_have_bundle = false;
 static int s_error = -1;        // -1 none; 0 ready; 1 no-loc; 2 bad-station; 3 offline; 4 no-trains
 static uint8_t s_line = 0, s_dir = 0;
+static Window *s_settings;
+static MenuLayer *s_menu;
 
 static void render_dispatch(void);
+static void open_settings(ClickRecognizerRef r, void *c);
 
 static void request_refresh(void) {
   DictionaryIterator *out;
@@ -24,10 +28,90 @@ static void request_refresh(void) {
   dict_write_uint8(out, MESSAGE_KEY_Request, 1);
   if (nearest) {
     dict_write_uint8(out, MESSAGE_KEY_UseNearest, 1);
-  } else if (persist_exists(PERSIST_BUNDLE)) {
+  } else if (persist_exists(PERSIST_STATION_ID)) {
+    char id[12];
+    persist_read_string(PERSIST_STATION_ID, id, sizeof(id));
+    dict_write_cstring(out, MESSAGE_KEY_StationId, id);
+  } else {
     dict_write_uint8(out, MESSAGE_KEY_UseNearest, 1);
   }
   app_message_outbox_send();
+}
+
+static uint16_t menu_num_rows(MenuLayer *m, uint16_t section, void *ctx) { return 3; }
+
+static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void *c) {
+  switch (idx->row) {
+    case 0: {
+      bool nearest = persist_exists(PERSIST_USE_NEAREST) ? persist_read_bool(PERSIST_USE_NEAREST) : true;
+      menu_cell_basic_draw(ctx, cell, "Use nearest", nearest ? "On" : "Off", NULL);
+      break;
+    }
+    case 1: menu_cell_basic_draw(ctx, cell, "Pin this station", s_have_bundle ? s_bundle.station : "", NULL); break;
+    case 2: menu_cell_basic_draw(ctx, cell, "Refresh now", NULL, NULL); break;
+  }
+}
+
+static void menu_select(MenuLayer *m, MenuIndex *idx, void *c) {
+  switch (idx->row) {
+    case 0: {
+      bool cur = persist_exists(PERSIST_USE_NEAREST) ? persist_read_bool(PERSIST_USE_NEAREST) : true;
+      persist_write_bool(PERSIST_USE_NEAREST, !cur);
+      request_refresh();
+      menu_layer_reload_data(m);
+      break;
+    }
+    case 1:
+      if (s_have_bundle) {
+        persist_write_string(PERSIST_STATION_ID, s_bundle.id);
+        persist_write_bool(PERSIST_USE_NEAREST, false);
+        request_refresh();
+      }
+      menu_layer_reload_data(m);
+      break;
+    case 2:
+      request_refresh();
+      window_stack_pop(true);
+      break;
+  }
+}
+
+static void settings_load(Window *w) {
+  Layer *root = window_get_root_layer(w);
+  GRect b = layer_get_bounds(root);
+  s_menu = menu_layer_create(b);
+  menu_layer_set_callbacks(s_menu, NULL, (MenuLayerCallbacks){
+    .get_num_rows = menu_num_rows,
+    .draw_row = menu_draw_row,
+    .select_click = menu_select,
+  });
+  menu_layer_set_click_config_onto_window(s_menu, w);
+  layer_add_child(root, menu_layer_get_layer(s_menu));
+}
+static void settings_unload(Window *w) { menu_layer_destroy(s_menu); }
+
+static void open_settings(ClickRecognizerRef r, void *c) {
+  window_stack_push(s_settings, true);
+}
+
+static void next_line(ClickRecognizerRef r, void *c) {
+  if (!s_have_bundle || s_bundle.nLines == 0) return;
+  s_line = (s_line + 1) % s_bundle.nLines; s_dir = 0; render_dispatch();
+}
+static void prev_line(ClickRecognizerRef r, void *c) {
+  if (!s_have_bundle || s_bundle.nLines == 0) return;
+  s_line = (s_line + s_bundle.nLines - 1) % s_bundle.nLines; s_dir = 0; render_dispatch();
+}
+static void flip_dir(ClickRecognizerRef r, void *c) {
+  if (!s_have_bundle) return;
+  uint8_t nd = s_bundle.lines[s_line].nDirs; if (nd == 0) return;
+  s_dir = (s_dir + 1) % nd; render_dispatch();
+}
+static void click_config(void *ctx) {
+  window_single_click_subscribe(BUTTON_ID_UP, prev_line);
+  window_single_click_subscribe(BUTTON_ID_DOWN, next_line);
+  window_single_click_subscribe(BUTTON_ID_SELECT, flip_dir);
+  window_long_click_subscribe(BUTTON_ID_SELECT, 0, open_settings, NULL);
 }
 
 static void inbox_received(DictionaryIterator *iter, void *ctx) {
@@ -82,6 +166,7 @@ static void window_load(Window *w) {
   s_canvas = layer_create(b);
   layer_set_update_proc(s_canvas, canvas_update);
   layer_add_child(root, s_canvas);
+  window_set_click_config_provider(s_window, click_config);
 }
 static void window_unload(Window *w) { layer_destroy(s_canvas); }
 static void render_dispatch(void) { if (s_canvas) layer_mark_dirty(s_canvas); }
@@ -96,6 +181,9 @@ static void init(void) {
   window_set_window_handlers(s_window, (WindowHandlers){ .load = window_load, .unload = window_unload });
   window_stack_push(s_window, true);
 
+  s_settings = window_create();
+  window_set_window_handlers(s_settings, (WindowHandlers){ .load = settings_load, .unload = settings_unload });
+
   app_message_register_inbox_received(inbox_received);
   app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
 
@@ -105,9 +193,10 @@ static void init(void) {
 #ifdef MTA_FAKE
   {
     memset(&s_bundle, 0, sizeof(s_bundle));
-    s_bundle.version = 1;
+    s_bundle.version = 2;
     s_bundle.epochBase = time(NULL);
     strncpy(s_bundle.station, "Astoria-Ditmars Blvd", sizeof(s_bundle.station) - 1);
+    strcpy(s_bundle.id, "R01");
     s_bundle.nLines = 1;
     LineView *L = &s_bundle.lines[0];
     L->label[0] = 'N'; L->label[1] = 0; L->label[2] = 0;
@@ -126,5 +215,6 @@ static void deinit(void) {
   tick_timer_service_unsubscribe();
   if (s_poll) app_timer_cancel(s_poll);
   window_destroy(s_window);
+  window_destroy(s_settings);
 }
 int main(void) { init(); app_event_loop(); deinit(); }
