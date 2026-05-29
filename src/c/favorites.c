@@ -13,8 +13,9 @@ static uint8_t s_count = 0;
 //   [0]      id length L (1..FAV_ID_LEN-1)
 //   [1..L]   id bytes
 //   [L+1..]  name, NUL-terminated
+//   [..]     label, NUL-terminated  (absent in pre-Spec-B blobs => "")
 static void write_entry(uint8_t i) {
-  uint8_t buf[1 + FAV_ID_LEN + FAV_NAME_LEN];
+  uint8_t buf[1 + FAV_ID_LEN + FAV_NAME_LEN + FAV_LABEL_LEN];
   uint8_t L = (uint8_t)strlen(s_favs[i].id);
   if (L >= FAV_ID_LEN) L = FAV_ID_LEN - 1;
   buf[0] = L;
@@ -23,24 +24,40 @@ static void write_entry(uint8_t i) {
   if (nlen >= FAV_NAME_LEN) nlen = FAV_NAME_LEN - 1;
   memcpy(buf + 1 + L, s_favs[i].name, nlen);
   buf[1 + L + nlen] = '\0';
-  persist_write_data(PERSIST_FAV_BASE + i, buf, 1 + L + nlen + 1);
+  size_t llen = strlen(s_favs[i].label);
+  if (llen >= FAV_LABEL_LEN) llen = FAV_LABEL_LEN - 1;
+  size_t off = 1 + L + nlen + 1;
+  memcpy(buf + off, s_favs[i].label, llen);
+  buf[off + llen] = '\0';
+  persist_write_data(PERSIST_FAV_BASE + i, buf, off + llen + 1);
 }
 
 static bool read_entry(uint8_t i, Fav *out) {
   if (!persist_exists(PERSIST_FAV_BASE + i)) return false;
-  uint8_t buf[1 + FAV_ID_LEN + FAV_NAME_LEN];
+  uint8_t buf[1 + FAV_ID_LEN + FAV_NAME_LEN + FAV_LABEL_LEN];
   int n = persist_read_data(PERSIST_FAV_BASE + i, buf, sizeof(buf));
   if (n < 2) return false;
   uint8_t L = buf[0];
   if (L == 0 || L >= FAV_ID_LEN || L + 1 >= n) return false;
   memcpy(out->id, buf + 1, L);
   out->id[L] = '\0';
-  size_t maxname = (size_t)(n - (1 + L));
-  if (maxname >= FAV_NAME_LEN) maxname = FAV_NAME_LEN - 1;
-  memcpy(out->name, buf + 1 + L, maxname);
-  out->name[maxname] = '\0';
-  // Defensive: ensure NUL-termination even if stored blob lacked it.
-  out->name[FAV_NAME_LEN - 1] = '\0';
+  // name: from buf+1+L up to its NUL (or end of blob).
+  size_t nstart = 1 + L;
+  size_t nraw = 0;
+  while (nstart + nraw < (size_t)n && buf[nstart + nraw] != '\0') nraw++;
+  size_t nlen = nraw >= FAV_NAME_LEN ? FAV_NAME_LEN - 1 : nraw;
+  memcpy(out->name, buf + nstart, nlen);
+  out->name[nlen] = '\0';
+  // label: bytes after the name's NUL, if any (empty for pre-Spec-B blobs).
+  out->label[0] = '\0';
+  size_t lstart = nstart + nraw + 1;   // skip the name's NUL
+  if (lstart < (size_t)n) {
+    size_t lraw = 0;
+    while (lstart + lraw < (size_t)n && buf[lstart + lraw] != '\0') lraw++;
+    size_t llen = lraw >= FAV_LABEL_LEN ? FAV_LABEL_LEN - 1 : lraw;
+    memcpy(out->label, buf + lstart, llen);
+    out->label[llen] = '\0';
+  }
   return true;
 }
 
@@ -57,6 +74,7 @@ static void migrate_legacy(void) {
       s_favs[0].id[FAV_ID_LEN - 1] = '\0';
       strncpy(s_favs[0].name, id, FAV_NAME_LEN - 1);
       s_favs[0].name[FAV_NAME_LEN - 1] = '\0';
+      s_favs[0].label[0] = '\0';
       s_count = 1;
       write_entry(0);
     }
@@ -100,6 +118,7 @@ bool favorites_add(const char *id, const char *name) {
   Fav *f = &s_favs[s_count];
   strncpy(f->id, id, FAV_ID_LEN - 1);   f->id[FAV_ID_LEN - 1] = '\0';
   strncpy(f->name, name ? name : id, FAV_NAME_LEN - 1); f->name[FAV_NAME_LEN - 1] = '\0';
+  f->label[0] = '\0';
   write_entry(s_count);
   s_count++;
   persist_count();
@@ -128,4 +147,31 @@ bool favorites_update_name(uint8_t i, const char *name) {
   s_favs[i].name[FAV_NAME_LEN - 1] = '\0';
   write_entry(i);
   return true;
+}
+
+bool favorites_set_label(uint8_t i, const char *label) {
+  if (i >= s_count) return false;
+  const char *l = label ? label : "";
+  if (strncmp(s_favs[i].label, l, FAV_LABEL_LEN) == 0) return false;
+  strncpy(s_favs[i].label, l, FAV_LABEL_LEN - 1);
+  s_favs[i].label[FAV_LABEL_LEN - 1] = '\0';
+  write_entry(i);
+  return true;
+}
+
+void favorites_replace_all(const Fav *items, uint8_t n) {
+  if (n > FAV_MAX) n = FAV_MAX;
+  uint8_t w = 0;
+  for (uint8_t i = 0; i < n; i++) {
+    if (!items[i].id[0]) continue;                 // skip empty ids
+    strncpy(s_favs[w].id, items[i].id, FAV_ID_LEN - 1);       s_favs[w].id[FAV_ID_LEN - 1] = '\0';
+    strncpy(s_favs[w].name, items[i].name, FAV_NAME_LEN - 1); s_favs[w].name[FAV_NAME_LEN - 1] = '\0';
+    strncpy(s_favs[w].label, items[i].label, FAV_LABEL_LEN - 1); s_favs[w].label[FAV_LABEL_LEN - 1] = '\0';
+    write_entry(w);
+    w++;
+  }
+  for (uint8_t i = w; i < s_count; i++)
+    if (persist_exists(PERSIST_FAV_BASE + i)) persist_delete(PERSIST_FAV_BASE + i);
+  s_count = w;
+  persist_count();
 }
