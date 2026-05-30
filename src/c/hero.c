@@ -19,9 +19,10 @@ static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, co
   float SX = bounds.size.w / REF_W, SY = bounds.size.h / REF_H;
   graphics_context_set_antialiased(ctx, true);
 
-  // Bullet disc, centered horizontally near the top.
-  int r = (int)(DISC_R * ((SX + SY) / 2)); if (r > 35) r = 35;
-  GPoint disc = GPoint(bounds.size.w / 2, (int)(34 * SY) + r);
+  // Bullet disc, centered horizontally near the top. Sits a touch higher and a
+  // touch smaller than the normal hero bullet to leave room for the reason text.
+  int r = (int)(DISC_R * ((SX + SY) / 2)); if (r > 31) r = 31;
+  GPoint disc = GPoint(bounds.size.w / 2, (int)(22 * SY) + r);
 #if defined(PBL_COLOR)
   graphics_context_set_fill_color(ctx, GColorFromRGB(L->r, L->g, L->b));
 #else
@@ -45,27 +46,35 @@ static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, co
     GRect(disc.x - lbox / 2, disc.y - ls.h / 2 + lnudge, lbox, ls.h + 8),
     GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 
+  // Only emery/gabbro (>=200px tall) have the headroom for the larger type; on
+  // 144x168 and round, smaller fonts keep the reason off the station footer.
+  bool tall = bounds.size.h >= 200;
+
   // "SUSPENDED" headline under the bullet.
+  int sus_h = tall ? 30 : 22;
   int sus_top = disc.y + r + (int)(6 * SY);
   graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorYellow, GColorWhite));
-  graphics_draw_text(ctx, "SUSPENDED", fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
-    GRect(4, sus_top, bounds.size.w - 8, 30), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  graphics_draw_text(ctx, "SUSPENDED",
+    fonts_get_system_font(tall ? FONT_KEY_GOTHIC_24_BOLD : FONT_KEY_GOTHIC_18_BOLD),
+    GRect(4, sus_top, bounds.size.w - 8, sus_h), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 
-  // Wrapped MTA reason text.
-  int rs_top = sus_top + (int)(28 * SY);
-  int rs_inset = PBL_IF_ROUND_ELSE(24, 6);
-  graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, L->notice, fonts_get_system_font(FONT_KEY_GOTHIC_18),
-    GRect(rs_inset, rs_top, bounds.size.w - 2 * rs_inset, bounds.size.h - rs_top - 22),
-    GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
-
-  // Current station at the very bottom (matches the normal hero footer color).
+  // Station footer pinned to the bottom; the reason fills the gap above it so
+  // the two can never overlap regardless of how many lines the reason wraps to.
+  int foot_inset = PBL_IF_ROUND_ELSE(34, 4);
+  int foot_top = bounds.size.h - 18 - PBL_IF_ROUND_ELSE(8, 2);
   graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite));
-  int st_inset = PBL_IF_ROUND_ELSE(34, 4);
-  int st_top = (int)(PBL_IF_ROUND_ELSE(150, 150) * SY);
   graphics_draw_text(ctx, b->station, fonts_get_system_font(FONT_KEY_GOTHIC_14),
-    GRect(st_inset, st_top, bounds.size.w - 2 * st_inset, 18),
+    GRect(foot_inset, foot_top, bounds.size.w - 2 * foot_inset, 18),
     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+
+  // Wrapped MTA reason text, between SUSPENDED and the footer.
+  int rs_top = sus_top + sus_h + (int)(2 * SY);
+  int rs_inset = PBL_IF_ROUND_ELSE(16, 6);
+  graphics_context_set_text_color(ctx, GColorWhite);
+  graphics_draw_text(ctx, L->notice,
+    fonts_get_system_font(tall ? FONT_KEY_GOTHIC_18 : FONT_KEY_GOTHIC_14),
+    GRect(rs_inset, rs_top, bounds.size.w - 2 * rs_inset, foot_top - rs_top - 2),
+    GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
 }
 
 void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8_t dir, time_t now) {
