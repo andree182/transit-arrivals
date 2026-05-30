@@ -47,7 +47,7 @@ function clean(text) {
 function extractAlerts(feed, lines, now) {
   var entities = feed && feed.entity;
   if (!Array.isArray(entities)) return [];
-  var out = [], seen = {};
+  var out = [], seen = Object.create(null);
   for (var i = 0; i < entities.length && out.length < MAX_ALERTS; i++) {
     var a = entities[i] && entities[i].alert;
     if (!a) continue;
@@ -63,4 +63,4 @@ function extractAlerts(feed, lines, now) {
   return out;
 }
 
-module.exports = { extractAlerts };
+module.exports = { extractAlerts: extractAlerts };

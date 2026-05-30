@@ -27,4 +27,4 @@ function readFields(buf, start, end) {
   }
   return out;
 }
-module.exports = { readVarint, readFields };
+module.exports = { readVarint: readVarint, readFields: readFields };

@@ -118,7 +118,9 @@ static void request_refresh(void) {
 }
 
 static void push_favsync(void) {
-  uint8_t buf[2 + FAV_MAX * (3 + (FAV_ID_LEN - 1) + (FAV_NAME_LEN - 1) + (FAV_LABEL_LEN - 1))];
+  // static (not stack): ~882 B is a lot for aplite-class stacks, and the
+  // single-threaded event loop means push_favsync is never reentered.
+  static uint8_t buf[2 + FAV_MAX * (3 + (FAV_ID_LEN - 1) + (FAV_NAME_LEN - 1) + (FAV_LABEL_LEN - 1))];
   size_t n = favsync_encode(s_nearest_pos, buf, sizeof(buf));
   if (!n) return;
   DictionaryIterator *out;

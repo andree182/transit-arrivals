@@ -30,4 +30,4 @@ function displayName(station) {
   return station.name + lines;
 }
 
-module.exports = { nearestStation, getStation, displayName, _db: DB };
+module.exports = { nearestStation: nearestStation, getStation: getStation, displayName: displayName, _db: DB };

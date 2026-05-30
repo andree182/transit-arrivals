@@ -34,16 +34,18 @@ function fetchFeed(url, cb) {
 function fetchAlerts(station) {
   var xhr = new XMLHttpRequest();
   xhr.open('GET', ALERTS_URL, true);
+  // On any failure we leave the existing badge alone rather than clearing it,
+  // so a transient alerts-feed hiccup can't drop a real alert. Only a clean
+  // fetch updates the set (an empty result then correctly clears stale alerts).
   xhr.onload = function () {
-    var list = [];
+    if (xhr.status !== 200 || !xhr.responseText) return;
+    var list;
     try {
-      if (xhr.status === 200 && xhr.responseText) {
-        list = alertsLib.extractAlerts(JSON.parse(xhr.responseText), station.lines, nowSecs());
-      }
-    } catch (e) { console.log('[mta] alerts EXC ' + e.message); }
+      list = alertsLib.extractAlerts(JSON.parse(xhr.responseText), station.lines, nowSecs());
+    } catch (e) { console.log('[mta] alerts EXC ' + e.message); return; }
     Pebble.sendAppMessage({ Alerts: list.join('\n') });
   };
-  xhr.onerror = function () { Pebble.sendAppMessage({ Alerts: '' }); };
+  xhr.onerror = function () { console.log('[mta] alerts network FAIL'); };
   xhr.send();
 }
 

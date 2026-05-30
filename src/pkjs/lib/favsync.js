@@ -2,13 +2,14 @@ var ID_MAX = 15, NAME_MAX = 47, LABEL_MAX = 23;
 
 function pushStr(arr, s, max) {
   var bytes = [];
-  for (var i = 0; i < s.length && bytes.length < max; i++) {
+  for (var i = 0; i < s.length; i++) {
     var c = s.charCodeAt(i);
-    if (c < 128) bytes.push(c);                       // ASCII fast path
-    else if (c < 2048) { bytes.push(192 | (c >> 6), 128 | (c & 63)); }
+    var width = c < 128 ? 1 : (c < 2048 ? 2 : 3);
+    if (bytes.length + width > max) break;            // never split a character
+    if (width === 1) bytes.push(c);
+    else if (width === 2) { bytes.push(192 | (c >> 6), 128 | (c & 63)); }
     else { bytes.push(224 | (c >> 12), 128 | ((c >> 6) & 63), 128 | (c & 63)); }
   }
-  if (bytes.length > max) bytes = bytes.slice(0, max);
   arr.push(bytes.length);
   for (var j = 0; j < bytes.length; j++) arr.push(bytes[j]);
 }
@@ -30,8 +31,12 @@ function readStr(b, pos) {
   while (pos.i < end) {
     var c = b[pos.i++];
     if (c < 128) s += String.fromCharCode(c);
-    else if ((c & 224) === 192) { s += String.fromCharCode(((c & 31) << 6) | (b[pos.i++] & 63)); }
-    else { var c2 = b[pos.i++] & 63, c3 = b[pos.i++] & 63; s += String.fromCharCode(((c & 15) << 12) | (c2 << 6) | c3); }
+    else if ((c & 224) === 192 && pos.i < end) {
+      s += String.fromCharCode(((c & 31) << 6) | (b[pos.i++] & 63));
+    } else if (pos.i + 1 < end) {
+      var c2 = b[pos.i++] & 63, c3 = b[pos.i++] & 63;
+      s += String.fromCharCode(((c & 15) << 12) | (c2 << 6) | c3);
+    } else break;                                     // truncated trailing bytes
   }
   return s;
 }

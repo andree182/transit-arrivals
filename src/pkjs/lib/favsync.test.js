@@ -36,6 +36,21 @@ test('clamps over-long fields to the C buffer sizes', () => {
   assert.strictEqual(out.favs[0].label.length, 23);
 });
 
+test('never splits a multibyte character at the field-length cap', () => {
+  // Label cap is 23 bytes. 11 × 2-byte 'é' = 22 bytes; a 12th would need 24,
+  // so it must be dropped whole rather than truncated to a lone lead byte.
+  const label = 'é'.repeat(12);
+  const out = decodeFavList(encodeFavList(0, [{ id: 'A', name: 'N', label: label }]));
+  assert.strictEqual(out.favs[0].label, 'é'.repeat(11));
+});
+
+test('decodes truncated trailing bytes without reading past the field', () => {
+  // A 3-byte char (€) right at the cap is dropped whole; the field stays valid.
+  const out = decodeFavList(encodeFavList(0, [{ id: 'A', name: 'N', label: '€'.repeat(8) }]));
+  // 7 × 3 = 21 bytes fit (≤23); the 8th would need 24, so 7 survive.
+  assert.strictEqual(out.favs[0].label, '€'.repeat(7));
+});
+
 test('accepts a plain number array (AppMessage payload form)', () => {
   const bytes = Array.prototype.slice.call(encodeFavList(0, [{ id: 'A', name: 'Alpha', label: 'Home' }]));
   const out = decodeFavList(bytes);

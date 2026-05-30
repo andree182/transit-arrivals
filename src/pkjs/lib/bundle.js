@@ -33,4 +33,4 @@ function encodeBundle(stationId, stationName, lines, epochBase, colorFn) {
   });
   return Uint8Array.from(b);
 }
-module.exports = { encodeBundle, _dirCode: dirCode };
+module.exports = { encodeBundle: encodeBundle, _dirCode: dirCode };

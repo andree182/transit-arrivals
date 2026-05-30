@@ -33,4 +33,4 @@ function extractStopTimes(buf) {
   });
   return rows;
 }
-module.exports = { extractStopTimes };
+module.exports = { extractStopTimes: extractStopTimes };

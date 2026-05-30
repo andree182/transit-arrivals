@@ -1,6 +1,13 @@
+// JSON.stringify does not escape "</script>" or "<!--", so a free-text label
+// could break out of the <script type="application/json"> island. Neutralize
+// both sequences before embedding.
+function safeJson(obj) {
+  return JSON.stringify(obj).replace(/<\//g, '<\\/').replace(/<!--/g, '<\\u0021--');
+}
+
 function buildConfigHtml(nearestPos, favs, stationDB) {
-  var initState = JSON.stringify({ nearestPos: nearestPos, favs: favs });
-  var db = JSON.stringify(stationDB);
+  var initState = safeJson({ nearestPos: nearestPos, favs: favs });
+  var db = safeJson(stationDB);
   return '<!DOCTYPE html>\n' +
 '<html><head><meta charset="utf-8">' +
 '<meta name="viewport" content="width=device-width, initial-scale=1">' +

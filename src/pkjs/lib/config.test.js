@@ -30,6 +30,16 @@ test('embeds current favorites with labels and nearestPos', () => {
   assert.deepStrictEqual(state.favs, favs);
 });
 
+test('escapes a label that tries to break out of the script island', () => {
+  const evil = '</script><img src=x onerror=alert(1)>';
+  const html = buildConfigHtml(0, [{ id: 'A', name: 'N', label: evil }], DB);
+  // The raw "</script>" must not appear inside the JSON island (it is escaped),
+  // so the extractor's first-</script> match still captures the whole island...
+  const state = extractJson(html, 'init-state');
+  assert.strictEqual(state.favs[0].label, evil);   // ...and the label survives intact
+  assert.ok(html.indexOf('<\\/script><img') >= 0, 'breakout sequence is escaped');
+});
+
 test('produces a complete HTML document', () => {
   const html = buildConfigHtml(255, [], DB);
   assert.match(html, /^<!DOCTYPE html>/);

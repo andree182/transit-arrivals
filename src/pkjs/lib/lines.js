@@ -31,4 +31,4 @@ function feedUrls(lines) {
   lines.forEach(function (l) { var g = feedForLine(l); if (g) groups[g] = true; });
   return Object.keys(groups).map(function (g) { return BASE + GROUPS[g]; });
 }
-module.exports = { feedForLine, colorForLine, feedUrls, _groups: GROUPS };
+module.exports = { feedForLine: feedForLine, colorForLine: colorForLine, feedUrls: feedUrls, _groups: GROUPS };
