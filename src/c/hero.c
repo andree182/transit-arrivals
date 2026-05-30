@@ -60,6 +60,43 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   // it. Cap keeps the letter:disc ratio consistent on emery/gabbro.
   int r = (int)(DISC_R * ((SX + SY) / 2));
   if (r > 35) r = 35;
+
+  // Count metrics are computed up front (before the disc is drawn) so the round
+  // displays can recentre the whole disc + "N min" group. The reference layout
+  // is left-biased — fine on rect, but the circular crop makes it look lopsided.
+  char num[12];
+  int secs = (int)(b->epochBase + D->delta[0]) - (int)now;
+  int mins = secs / 60;
+  fmt_count(mins, num, sizeof(num));
+  bool isNow = (mins <= 0);
+  bool isDouble = (!isNow && mins >= 10);
+  float leftX = isNow ? 75.8f : (isDouble ? 68.8f : 76.6f);
+  float baseY = isNow ? 91.5f : (isDouble ? 95.1f : 96.8f);
+  GFont nf = isNow ? fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD)
+                   : fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
+  GSize ns = graphics_text_layout_get_content_size(num, nf,
+               GRect(0, 0, bounds.size.w, bounds.size.h), GTextOverflowModeFill, GTextAlignmentLeft);
+  int nx = (int)(leftX * SX);
+  GFont uf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  int min_gap = isNow ? 0 : (int)(MIN_GAP * SX);
+#if defined(PBL_ROUND)
+  // Recentre the disc + number + "min" group on the screen's vertical axis so
+  // it sits under the centered headsign and NEXT rows. Rect keeps its tuning.
+  {
+    int min_w = 0;
+    if (!isNow) {
+      GSize msz = graphics_text_layout_get_content_size("min", uf,
+                    GRect(0, 0, 40, 18), GTextOverflowModeFill, GTextAlignmentLeft);
+      min_w = msz.w;
+    }
+    int gleft = disc.x - r;
+    int gright = nx + ns.w + (isNow ? 0 : (min_gap + min_w));
+    int hshift = bounds.size.w / 2 - (gleft + gright) / 2;
+    disc.x += hshift;
+    nx += hshift;
+  }
+#endif
+
 #if defined(PBL_COLOR)
   graphics_context_set_fill_color(ctx, GColorFromRGB(L->r, L->g, L->b));
 #else
@@ -92,22 +129,7 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
     GRect(disc.x - lbox / 2, disc.y - ls.h / 2 + lnudge, lbox, ls.h + 8),
     GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 
-  char num[12];
-  int secs = (int)(b->epochBase + D->delta[0]) - (int)now;
-  int mins = secs / 60;
-  fmt_count(mins, num, sizeof(num));
-  bool isNow = (mins <= 0);
-  bool isDouble = (!isNow && mins >= 10);
-  float leftX = isNow ? 75.8f : (isDouble ? 68.8f : 76.6f);
-  float baseY = isNow ? 91.5f : (isDouble ? 95.1f : 96.8f);
-  // Single and double-digit counts share the same bold face; only the position
-  // shifts to make room for the second digit. ("Now" uses a smaller bold word.)
-  GFont nf = isNow ? fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD)
-                   : fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
-  GSize ns = graphics_text_layout_get_content_size(num, nf,
-               GRect(0, 0, bounds.size.w, bounds.size.h), GTextOverflowModeFill, GTextAlignmentLeft);
   graphics_context_set_text_color(ctx, GColorWhite);
-  int nx = (int)(leftX * SX);
   // The number's vertical offset from the disc center is a FONT-METRIC
   // constant (system fonts don't scale with SY), so anchor to the scaled
   // disc.y and add the UNSCALED baseline offset locked on basalt. This keeps
@@ -117,9 +139,8 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 
   if (!isNow) {
-    GFont uf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
     graphics_context_set_text_color(ctx, GColorLightGray);
-    int ux = nx + ns.w + (int)(MIN_GAP * SX);
+    int ux = nx + ns.w + min_gap;
     int uy = disc.y + (int)(MIN_BASEY - DISC_CY) - 16;
     graphics_draw_text(ctx, "min", uf, GRect(ux, uy, 40, 18),
                        GTextOverflowModeFill, GTextAlignmentLeft, NULL);
