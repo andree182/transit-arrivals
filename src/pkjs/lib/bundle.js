@@ -30,7 +30,7 @@ function dirCode(route, dir) {
 
 function encodeBundle(stationId, stationName, lines, epochBase, colorFn) {
   var b = [];
-  b.push(3);                       // version
+  b.push(4);                       // version
   putU32(b, epochBase);
   putStr(b, stationName, 39);
   putStr(b, stationId, 11);
@@ -38,14 +38,22 @@ function encodeBundle(stationId, stationName, lines, epochBase, colorFn) {
   lines.forEach(function (ln) {
     putStr(b, ln.line, 2);
     var c = colorFn(ln.line); b.push(c[0], c[1], c[2]);
-    b.push(ln.directions.length & 0xff);
-    ln.directions.forEach(function (d) {
-      putStr(b, d.dest, 20);
-      b.push(dirCode(ln.line, d.dir));
-      var times = d.times.slice(0, 6);
-      b.push(times.length & 0xff);
-      times.forEach(function (t) { putU16(b, t - epochBase); });
-    });
+    var dirs = ln.directions || [];
+    b.push(dirs.length & 0xff);
+    if (dirs.length === 0) {
+      var notice = ln.notice || '';
+      var n = notice.length > 80 ? 80 : notice.length;
+      b.push(n & 0xff);
+      for (var i = 0; i < n; i++) b.push(notice.charCodeAt(i) & 0xff);
+    } else {
+      dirs.forEach(function (d) {
+        putStr(b, d.dest, 20);
+        b.push(dirCode(ln.line, d.dir));
+        var times = d.times.slice(0, 6);
+        b.push(times.length & 0xff);
+        times.forEach(function (t) { putU16(b, t - epochBase); });
+      });
+    }
   });
   return Uint8Array.from(b);
 }

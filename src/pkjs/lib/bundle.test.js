@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const { encodeBundle } = require('./bundle');
 const { colorForLine } = require('./lines');
 
-// v3 header: version(1) + epoch(4) + station(39) + id(11) + lineCount(1) = 56.
+// v4 header: version(1) + epoch(4) + station(39) + id(11) + lineCount(1) = 56.
 // Per line: label(2) + rgb(3) + nDirs(1) = 6, then per dir: dest(20) + dir(1) +
 // nArr(1) + deltas. So for the first line/dir:
 const LINE_COUNT = 55;
@@ -14,7 +14,7 @@ const DELTA0 = N_ARR + 1;               // 84
 test('encodes header, station, id, and one line/dir/arrival', () => {
   const arr = [{ line: 'N', directions: [{ dir: 'N', dest: 'Astoria-Ditmars Blvd', times: [1060, 1300] }] }];
   const bytes = encodeBundle('R01', 'Astoria-Ditmars Blvd', arr, 1000, colorForLine);
-  assert.strictEqual(bytes[0], 3);                        // version
+  assert.strictEqual(bytes[0], 4);                        // version
   assert.strictEqual(bytes[1] | (bytes[2] << 8) | (bytes[3] << 16) | (bytes[4] * 16777216), 1000);
   assert.strictEqual(bytes[LINE_COUNT], 1);               // lineCount
   assert.strictEqual(bytes[DIR_CODE], 2);                 // N northbound heads to Queens (2)
@@ -48,4 +48,21 @@ test('long suffixed name round-trips without truncation', () => {
   let out = '';
   for (let i = 5; i < 5 + name.length; i++) out += String.fromCharCode(bytes[i]);
   assert.strictEqual(out, name);
+});
+
+test('version byte is 4', () => {
+  const bytes = encodeBundle('x', 'y', [], 1000, () => [0, 0, 0]);
+  assert.strictEqual(bytes[0], 4);
+});
+
+test('encodes a synthetic suspended line as nDirs=0 + notice', () => {
+  const arr = [{ line: 'J', directions: [], notice: 'No J trains' }];
+  const bytes = encodeBundle('x', 'y', arr, 1000, () => [1, 2, 3]);
+  const nDirsAt = 56 + 2 + 3;                 // header(56) + label(2) + rgb(3) = 61
+  assert.strictEqual(bytes[nDirsAt], 0);      // nDirs == 0
+  const nLenAt = nDirsAt + 1;                 // 62
+  assert.strictEqual(bytes[nLenAt], 'No J trains'.length);
+  let s = '';
+  for (let i = nLenAt + 1; i < nLenAt + 1 + 'No J trains'.length; i++) s += String.fromCharCode(bytes[i]);
+  assert.strictEqual(s, 'No J trains');
 });
