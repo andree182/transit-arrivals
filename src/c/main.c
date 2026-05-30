@@ -522,7 +522,7 @@ static void help_load(Window *w) {
     "SELECT — Direction\n"
     "Hold SELECT — Menu\n"
     "Hold UP/DN — Station\n"
-    "Hold BACK — Alerts");
+    "2x BACK — Alerts");
   layer_add_child(root, text_layer_get_layer(s_help_body));
 
   int note_top = PBL_IF_ROUND_ELSE(b.size.h - 50, b.size.h - 46);
@@ -584,7 +584,7 @@ static void open_alerts_from_hero(ClickRecognizerRef r, void *c) {
   if (has_alerts()) open_alerts();
 }
 static void hero_back(ClickRecognizerRef r, void *c) {
-  window_stack_pop_all(true);   // tap BACK exits the app, as normal
+  window_stack_pop_all(true);   // single tap BACK exits the app, as normal
 }
 static void click_config(void *ctx) {
   window_single_click_subscribe(BUTTON_ID_UP, prev_line);
@@ -593,11 +593,11 @@ static void click_config(void *ctx) {
   window_long_click_subscribe(BUTTON_ID_SELECT, 0, open_settings, NULL);
   window_long_click_subscribe(BUTTON_ID_UP, 0, ring_prev, NULL);
   window_long_click_subscribe(BUTTON_ID_DOWN, 0, ring_next, NULL);
-  // A long-click subscription alone does NOT suppress the firmware's default
-  // back-out, so BACK must be claimed with a single-click handler too; that
-  // handler does the normal exit while the long-press opens alerts.
+  // The firmware reserves a long press on BACK, but a multi-click is allowed:
+  // single tap exits, double tap opens alerts. Claiming BACK with a single-click
+  // handler means the exit waits out the double-tap window before firing.
   window_single_click_subscribe(BUTTON_ID_BACK, hero_back);
-  window_long_click_subscribe(BUTTON_ID_BACK, 0, open_alerts_from_hero, NULL);
+  window_multi_click_subscribe(BUTTON_ID_BACK, 2, 2, 0, true, open_alerts_from_hero);
 }
 
 static void inbox_received(DictionaryIterator *iter, void *ctx) {
