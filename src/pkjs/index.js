@@ -31,42 +31,53 @@ function fetchFeed(url, cb) {
   xhr.send();
 }
 
-function fetchAlerts(station) {
-  var xhr = new XMLHttpRequest();
-  xhr.open('GET', ALERTS_URL, true);
-  // On any failure we leave the existing badge alone rather than clearing it,
-  // so a transient alerts-feed hiccup can't drop a real alert. Only a clean
-  // fetch updates the set (an empty result then correctly clears stale alerts).
-  xhr.onload = function () {
-    if (xhr.status !== 200 || !xhr.responseText) return;
-    var list;
-    try {
-      list = alertsLib.extractAlerts(JSON.parse(xhr.responseText), station.lines, nowSecs());
-    } catch (e) { console.log('[mta] alerts EXC ' + e.message); return; }
-    Pebble.sendAppMessage({ Alerts: list.join('\n') });
-  };
-  xhr.onerror = function () { console.log('[mta] alerts network FAIL'); };
-  xhr.send();
-}
-
 function refreshFor(station) {
-  fetchAlerts(station);
   var urls = linesLib.feedUrls(station.lines);
-  var rows = [], pending = urls.length, failed = 0;
-  if (!pending) return sendError(2);
+  var rows = [], pendingFeeds = urls.length, failedFeeds = 0;
+  var alertsDone = false, suspensions = [];
+
+  function finish() {
+    if (!alertsDone || pendingFeeds > 0) return;
+    // All trip feeds failed AND nothing is suspended: report offline.
+    if (urls.length && failedFeeds === urls.length && !suspensions.length) return sendError(3);
+    var now = nowSecs();
+    var model = arrivalsLib.buildArrivals(rows, station.id, now);
+    // A suspended line with no trains here becomes a synthetic banner line.
+    suspensions.forEach(function (s) {
+      var running = model.some(function (m) { return m.line === s.code; });
+      if (!running) model.push({ line: s.code, directions: [], notice: s.reason });
+    });
+    if (!model.length) return sendError(4);                    // no trains, no suspensions
+    var bytes = bundleLib.encodeBundle(station.id, stations.displayName(station), model, now, linesLib.colorForLine);
+    Pebble.sendAppMessage({ Bundle: Array.prototype.slice.call(bytes) });
+  }
+
+  // Alerts feed (plain JSON): one fetch drives the reading screen AND suspensions.
+  var ax = new XMLHttpRequest();
+  ax.open('GET', ALERTS_URL, true);
+  ax.onload = function () {
+    if (ax.status === 200 && ax.responseText) {
+      try {
+        var feed = JSON.parse(ax.responseText);
+        var list = alertsLib.extractAlerts(feed, station.lines, nowSecs());
+        Pebble.sendAppMessage({ Alerts: list.join('\n') });
+        suspensions = alertsLib.extractSuspensions(feed, station.lines, nowSecs());
+      } catch (e) { console.log('[mta] alerts EXC ' + e.message); }
+    }
+    alertsDone = true; finish();
+  };
+  ax.onerror = function () { console.log('[mta] alerts network FAIL'); alertsDone = true; finish(); };
+  ax.send();
+
+  // Trip feeds (protobuf): build the live arrivals model.
   urls.forEach(function (url) {
     fetchFeed(url, function (err, buf) {
-      if (err) { failed++; console.log('[mta] feed FAIL ' + err.message + ' ' + url); } else {
-        try { rows = rows.concat(gtfsrt.extractStopTimes(buf)); } catch (e) { failed++; console.log('[mta] parse EXC ' + e.message + ' ' + url); }
+      if (err) { failedFeeds++; console.log('[mta] feed FAIL ' + err.message + ' ' + url); }
+      else {
+        try { rows = rows.concat(gtfsrt.extractStopTimes(buf)); }
+        catch (e) { failedFeeds++; console.log('[mta] parse EXC ' + e.message + ' ' + url); }
       }
-      if (--pending === 0) {
-        if (failed === urls.length) return sendError(3);          // all feeds failed
-        var now = nowSecs();
-        var model = arrivalsLib.buildArrivals(rows, station.id, now);
-        if (!model.length) return sendError(4);                    // no trains
-        var bytes = bundleLib.encodeBundle(station.id, stations.displayName(station), model, now, linesLib.colorForLine);
-        Pebble.sendAppMessage({ Bundle: Array.prototype.slice.call(bytes) });
-      }
+      pendingFeeds--; finish();
     });
   });
 }
