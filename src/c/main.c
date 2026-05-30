@@ -125,30 +125,49 @@ static SettingsRow settings_row(uint16_t r) {
   return order[r];
 }
 
-static void request_refresh(void) {
+// AppMessage outbox is single-slot: a second outbox_begin while a send is in
+// flight returns APP_MSG_BUSY and drops the message. The launch handshake needs
+// to send BOTH a favsync and a refresh request, so serialize them through a tiny
+// queue pumped by the outbox_sent/failed callbacks.
+static bool s_tx_busy = false;
+static bool s_tx_refresh = false;
+static bool s_tx_favsync = false;
+
+static void tx_pump(void) {
+  if (s_tx_busy) return;
   DictionaryIterator *out;
-  if (app_message_outbox_begin(&out) != APP_MSG_OK) return;
-  dict_write_uint8(out, MESSAGE_KEY_Request, 1);
-  if (ring_is_nearest(s_sel)) {
-    dict_write_uint8(out, MESSAGE_KEY_UseNearest, 1);
-  } else {
-    const Fav *f = favorites_get(ring_fav_index(s_sel));
-    if (f) dict_write_cstring(out, MESSAGE_KEY_StationId, f->id);
-    else   dict_write_uint8(out, MESSAGE_KEY_UseNearest, 1);
+  if (s_tx_refresh) {
+    if (app_message_outbox_begin(&out) != APP_MSG_OK) return;  // retry on next sent/failed
+    dict_write_uint8(out, MESSAGE_KEY_Request, 1);
+    if (ring_is_nearest(s_sel)) {
+      dict_write_uint8(out, MESSAGE_KEY_UseNearest, 1);
+    } else {
+      const Fav *f = favorites_get(ring_fav_index(s_sel));
+      if (f) dict_write_cstring(out, MESSAGE_KEY_StationId, f->id);
+      else   dict_write_uint8(out, MESSAGE_KEY_UseNearest, 1);
+    }
+    if (app_message_outbox_send() == APP_MSG_OK) { s_tx_refresh = false; s_tx_busy = true; }
+    return;
   }
-  app_message_outbox_send();
+  if (s_tx_favsync) {
+    // static (not stack): ~882 B is a lot for aplite-class stacks, and the
+    // single-threaded event loop means this is never reentered.
+    static uint8_t buf[2 + FAV_MAX * (3 + (FAV_ID_LEN - 1) + (FAV_NAME_LEN - 1) + (FAV_LABEL_LEN - 1))];
+    size_t n = favsync_encode(s_nearest_pos, buf, sizeof(buf));
+    if (!n) { s_tx_favsync = false; return; }
+    if (app_message_outbox_begin(&out) != APP_MSG_OK) return;
+    dict_write_data(out, MESSAGE_KEY_FavSync, buf, n);
+    if (app_message_outbox_send() == APP_MSG_OK) { s_tx_favsync = false; s_tx_busy = true; }
+    return;
+  }
 }
 
-static void push_favsync(void) {
-  // static (not stack): ~882 B is a lot for aplite-class stacks, and the
-  // single-threaded event loop means push_favsync is never reentered.
-  static uint8_t buf[2 + FAV_MAX * (3 + (FAV_ID_LEN - 1) + (FAV_NAME_LEN - 1) + (FAV_LABEL_LEN - 1))];
-  size_t n = favsync_encode(s_nearest_pos, buf, sizeof(buf));
-  if (!n) return;
-  DictionaryIterator *out;
-  if (app_message_outbox_begin(&out) != APP_MSG_OK) return;
-  dict_write_data(out, MESSAGE_KEY_FavSync, buf, n);
-  app_message_outbox_send();
+static void request_refresh(void) { s_tx_refresh = true; tx_pump(); }
+static void push_favsync(void) { s_tx_favsync = true; tx_pump(); }
+
+static void outbox_sent(DictionaryIterator *it, void *ctx) { s_tx_busy = false; tx_pump(); }
+static void outbox_failed(DictionaryIterator *it, AppMessageResult r, void *ctx) {
+  s_tx_busy = false; tx_pump();
 }
 
 static uint16_t menu_num_rows(MenuLayer *m, uint16_t section, void *ctx) {
@@ -773,6 +792,8 @@ static void init(void) {
   window_set_click_config_provider(s_help, help_click_config);
 
   app_message_register_inbox_received(inbox_received);
+  app_message_register_outbox_sent(outbox_sent);
+  app_message_register_outbox_failed(outbox_failed);
   app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
 
   tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
