@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { extractAlerts } = require('./alerts');
+const { extractAlerts, extractSuspensions } = require('./alerts');
 
 const NOW = 1000000;
 
@@ -113,4 +113,73 @@ test('collapses internal whitespace and trims', () => {
 test('returns empty for a missing or malformed feed', () => {
   assert.deepStrictEqual(extractAlerts(null, ['Q'], NOW), []);
   assert.deepStrictEqual(extractAlerts({}, ['Q'], NOW), []);
+});
+
+function susAlert(routes, atype, text, period) {
+  return {
+    alert: {
+      active_period: period,
+      informed_entity: routes.map(function (r) { return { route_id: r }; }),
+      header_text: { translation: [{ language: 'en', text: text }] },
+      'transit_realtime.mercury_alert': { alert_type: atype },
+    },
+  };
+}
+
+test('flags a full suspension for a watched line, normalized + reasoned', () => {
+  const f = feed([susAlert(['J'], 'Planned - Suspended', 'No J trains in Manhattan', undefined)]);
+  assert.deepStrictEqual(extractSuspensions(f, ['J'], NOW),
+    [{ code: 'J', reason: 'No J trains in Manhattan' }]);
+});
+
+test('flags a No Scheduled Service alert', () => {
+  const f = feed([susAlert(['G'], 'No Scheduled Service', 'No G service', undefined)]);
+  assert.deepStrictEqual(extractSuspensions(f, ['G'], NOW), [{ code: 'G', reason: 'No G service' }]);
+});
+
+test('flags a partial suspension too', () => {
+  const f = feed([susAlert(['4'], 'Planned - Part Suspended', 'No 4 in Brooklyn', undefined)]);
+  assert.deepStrictEqual(extractSuspensions(f, ['4'], NOW), [{ code: '4', reason: 'No 4 in Brooklyn' }]);
+});
+
+test('ignores non-suspension alert types', () => {
+  const f = feed([susAlert(['Q'], 'Delays', 'Q delayed', undefined)]);
+  assert.deepStrictEqual(extractSuspensions(f, ['Q'], NOW), []);
+});
+
+test('excludes a suspension outside its active period', () => {
+  const f = feed([susAlert(['J'], 'Planned - Suspended', 'old', [{ start: NOW - 100, end: NOW - 10 }])]);
+  assert.deepStrictEqual(extractSuspensions(f, ['J'], NOW), []);
+});
+
+test('excludes a suspension for a line not at this station', () => {
+  const f = feed([susAlert(['A'], 'Planned - Suspended', 'No A', undefined)]);
+  assert.deepStrictEqual(extractSuspensions(f, ['Q'], NOW), []);
+});
+
+test('normalizes SI to SIR and FS to S when matching station lines', () => {
+  const f = feed([
+    susAlert(['SI'], 'Planned - Suspended', 'No SIR', undefined),
+    susAlert(['FS'], 'No Scheduled Service', 'No Franklin shuttle', undefined),
+  ]);
+  assert.deepStrictEqual(extractSuspensions(f, ['SIR', 'S'], NOW),
+    [{ code: 'SIR', reason: 'No SIR' }, { code: 'S', reason: 'No Franklin shuttle' }]);
+});
+
+test('a full suspension outranks a partial one for the same line', () => {
+  const f = feed([
+    susAlert(['J'], 'Planned - Part Suspended', 'partial', undefined),
+    susAlert(['J'], 'Planned - Suspended', 'full', undefined),
+  ]);
+  assert.deepStrictEqual(extractSuspensions(f, ['J'], NOW), [{ code: 'J', reason: 'full' }]);
+});
+
+test('truncates a suspension reason to 80 chars', () => {
+  const f = feed([susAlert(['J'], 'Planned - Suspended', 'y'.repeat(120), undefined)]);
+  assert.strictEqual(extractSuspensions(f, ['J'], NOW)[0].reason.length, 80);
+});
+
+test('returns empty for a malformed feed', () => {
+  assert.deepStrictEqual(extractSuspensions(null, ['J'], NOW), []);
+  assert.deepStrictEqual(extractSuspensions({}, ['J'], NOW), []);
 });
