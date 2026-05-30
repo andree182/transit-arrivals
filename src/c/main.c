@@ -511,7 +511,7 @@ static void help_load(Window *w) {
   Layer *root = window_get_root_layer(w);
   GRect b = layer_get_bounds(root);
   int bx = PBL_IF_ROUND_ELSE(26, 6);
-  int top = PBL_IF_ROUND_ELSE(18, 4);
+  int top = PBL_IF_ROUND_ELSE(14, 4);
 
   s_help_title = text_layer_create(GRect(4, top, b.size.w - 8, 28));
   text_layer_set_background_color(s_help_title, GColorClear);
@@ -534,7 +534,7 @@ static void help_load(Window *w) {
     "Hold BACK — Alerts");
   layer_add_child(root, text_layer_get_layer(s_help_body));
 
-  int note_top = PBL_IF_ROUND_ELSE(b.size.h - 64, b.size.h - 46);
+  int note_top = PBL_IF_ROUND_ELSE(b.size.h - 50, b.size.h - 46);
   s_help_note = text_layer_create(GRect(bx, note_top, b.size.w - 2 * bx, b.size.h - note_top));
   text_layer_set_background_color(s_help_note, GColorClear);
   text_layer_set_text_color(s_help_note, GColorLightGray);
