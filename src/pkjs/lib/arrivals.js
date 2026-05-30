@@ -1,7 +1,10 @@
 var TERMINALS = require('./terminals.json');
 var STATIONS = require('./stations.data.json');
 var NAME = {};
-STATIONS.forEach(function (s) { NAME[s.id] = s.name; });
+STATIONS.forEach(function (s) {
+  NAME[s.id] = s.name;
+  if (s.ids) s.ids.forEach(function (m) { NAME[m] = s.name; });
+});
 
 function dirOf(stopId) {
   var c = stopId.charAt(stopId.length - 1);
@@ -22,11 +25,15 @@ function displayRoute(route) {
   return route;
 }
 
-// rows: [{route,stop,time}], stationId: parent id, now: epoch secs.
+// rows: [{route,stop,time}], stationId: a parent id or an array of parent ids
+// (a station complex shares one entry but spans several GTFS parent stations),
+// now: epoch secs.
 function buildArrivals(rows, stationId, now) {
+  var idSet = {};
+  (Array.isArray(stationId) ? stationId : [stationId]).forEach(function (i) { idSet[i] = true; });
   var byLine = {};
   rows.forEach(function (r) {
-    if (stationOf(r.stop) !== stationId) return;
+    if (!idSet[stationOf(r.stop)]) return;
     var dir = dirOf(r.stop);
     if (!dir || r.time < now) return;
     var L = byLine[r.route] || (byLine[r.route] = {});

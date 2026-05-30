@@ -20,6 +20,18 @@ test('groups by line then direction, sorted ascending, station-filtered', () => 
   assert.ok(north.dest.length > 0);                  // a destination label
 });
 
+test('a station complex matches arrivals across all its member stops', () => {
+  const cx = [
+    { route: '6', stop: '635N', time: 1000 }, // 456 platform
+    { route: 'L', stop: 'L03N', time: 1100 }, // L platform
+    { route: 'Q', stop: 'R20N', time: 1200 }, // NQRW platform
+    { route: '1', stop: '127N', time: 1300 }  // a different complex, excluded
+  ];
+  const out = buildArrivals(cx, ['635', 'L03', 'R20'], 900);
+  const linesSeen = out.map(o => o.line).sort();
+  assert.deepStrictEqual(linesSeen, ['6', 'L', 'Q']); // all three platforms, not the foreign '1'
+});
+
 test('drops arrivals already in the past (time < now)', () => {
   const out = buildArrivals([{ route: 'N', stop: 'R01N', time: 500 }], 'R01', 900);
   assert.strictEqual(out.length, 0);

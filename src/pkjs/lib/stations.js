@@ -20,6 +20,8 @@ function nearestStation(lat, lon) {
 
 function getStation(id) {
   for (var i = 0; i < DB.length; i++) if (DB[i].id === id) return DB[i];
+  // A favorite saved before a complex merge may hold a member id; resolve it.
+  for (var j = 0; j < DB.length; j++) if (DB[j].ids && DB[j].ids.indexOf(id) >= 0) return DB[j];
   return null;
 }
 
