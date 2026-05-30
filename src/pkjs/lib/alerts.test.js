@@ -77,10 +77,32 @@ test('dedupes identical headlines and caps to three', () => {
   assert.deepStrictEqual(out, ['dup', 'one', 'two']);
 });
 
-test('truncates an over-long headline to 100 chars', () => {
-  const long = 'x'.repeat(200);
+test('truncates an over-long headline to 220 chars', () => {
+  const long = 'x'.repeat(400);
   const out = extractAlerts(feed([alert(['Q'], long, undefined)]), ['Q'], NOW);
-  assert.strictEqual(out[0].length, 100);
+  assert.strictEqual(out[0].length, 220);
+});
+
+test('appends description_text to the header text', () => {
+  const f = feed([{
+    alert: {
+      informed_entity: [{ route_id: 'Q' }],
+      header_text: { translation: [{ language: 'en', text: 'Q suspended' }] },
+      description_text: { translation: [{ language: 'en', text: 'Use the R instead' }] },
+    },
+  }]);
+  assert.deepStrictEqual(extractAlerts(f, ['Q'], NOW), ['Q suspended — Use the R instead']);
+});
+
+test('caps the combined header+description at 220 chars', () => {
+  const f = feed([{
+    alert: {
+      informed_entity: [{ route_id: 'Q' }],
+      header_text: { translation: [{ language: 'en', text: 'h'.repeat(150) }] },
+      description_text: { translation: [{ language: 'en', text: 'd'.repeat(150) }] },
+    },
+  }]);
+  assert.strictEqual(extractAlerts(f, ['Q'], NOW)[0].length, 220);
 });
 
 test('collapses internal whitespace and trims', () => {

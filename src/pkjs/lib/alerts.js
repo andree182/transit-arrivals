@@ -1,5 +1,5 @@
 var MAX_ALERTS = 3;
-var MAX_LEN = 100;
+var MAX_LEN = 220;
 
 function pickText(headerText) {
   var tr = headerText && headerText.translation;
@@ -36,9 +36,10 @@ function matchesLines(informed, lines) {
   return false;
 }
 
-function clean(text) {
+function clean(text, max) {
+  if (!max) max = MAX_LEN;
   var s = text.replace(/\s+/g, ' ').trim();
-  return s.length > MAX_LEN ? s.slice(0, MAX_LEN) : s;
+  return s.length > max ? s.slice(0, max) : s;
 }
 
 // Returns up to MAX_ALERTS de-duped, cleaned headline strings for alerts that
@@ -55,6 +56,8 @@ function extractAlerts(feed, lines, now) {
     if (!isActive(a.active_period, now)) continue;
     var raw = pickText(a.header_text);
     if (!raw) continue;
+    var desc = pickText(a.description_text);
+    if (desc) raw = raw + ' — ' + desc;
     var text = clean(raw);
     if (!text || seen[text]) continue;
     seen[text] = true;
