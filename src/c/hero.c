@@ -15,6 +15,61 @@ static void fmt_count(int mins, char *out, size_t n) {
   else snprintf(out, n, "%d", mins);
 }
 
+// Draw the roundel label centered on the disc. Single-char MTA bullets use the
+// big Bitham face; multi-char labels (PATH's "NW"/"W3"…, the 3-char "SIR") step
+// down to Gothic bold so both glyphs sit inside the disc instead of spilling out
+// its sides. Caller sets the text color first. lnudge corrects each face's top
+// padding so the glyph is optically centered.
+static void draw_bullet_label(GContext *ctx, GPoint disc, int r, const char *label) {
+  bool bigDisc = (r >= 28);
+  size_t len = strlen(label);
+  GFont lf; int lnudge;
+  if (len >= 3) {
+    lf = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+    lnudge = -2;
+  } else if (len == 2) {
+    lf = fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
+    lnudge = -5;
+  } else {
+    lf = fonts_get_system_font(bigDisc ? FONT_KEY_BITHAM_42_BOLD : FONT_KEY_BITHAM_30_BLACK);
+    lnudge = bigDisc ? -7 : -4;
+  }
+  GSize ls = graphics_text_layout_get_content_size(label, lf,
+               GRect(0, 0, 2 * r + 8, 2 * r + 8), GTextOverflowModeFill, GTextAlignmentCenter);
+  int lbox = 2 * r + 16;
+  graphics_draw_text(ctx, label, lf,
+    GRect(disc.x - lbox / 2, disc.y - ls.h / 2 + lnudge, lbox, ls.h + 8),
+    GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+}
+
+// PATH lines carry 2-char labels (NW/HW/W3/JS/JH/NH/H3); subway bullets are a
+// single char (the "SIR" service is 3). Give PATH a rounded pill and the subway
+// its iconic circle, matching each system's real signage.
+static bool is_pill_label(const char *label) { return strlen(label) == 2; }
+
+// Fill the bullet shape in the line color and draw its centered label. Label is
+// white, except on a pale disc (the yellow N/Q/R/W line) where black reads better.
+static void draw_bullet(GContext *ctx, GPoint disc, int r, const LineView *L) {
+#if defined(PBL_COLOR)
+  graphics_context_set_fill_color(ctx, GColorFromRGB(L->r, L->g, L->b));
+#else
+  graphics_context_set_fill_color(ctx, GColorWhite);
+#endif
+  if (is_pill_label(L->label)) {
+    int pw = 2 * r, ph = (int)(1.5f * r);
+    graphics_fill_rect(ctx, GRect(disc.x - pw / 2, disc.y - ph / 2, pw, ph), ph / 2, GCornersAll);
+  } else {
+    graphics_fill_circle(ctx, disc, r);
+  }
+#if defined(PBL_COLOR)
+  int lum = (77 * L->r + 150 * L->g + 29 * L->b) >> 8;   // ~Rec.601 (0.299/0.587/0.114)
+  graphics_context_set_text_color(ctx, lum > 176 ? GColorBlack : GColorWhite);
+#else
+  graphics_context_set_text_color(ctx, GColorBlack);
+#endif
+  draw_bullet_label(ctx, disc, r, L->label);
+}
+
 static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, const LineView *L) {
   float SX = bounds.size.w / REF_W, SY = bounds.size.h / REF_H;
   graphics_context_set_antialiased(ctx, true);
@@ -23,28 +78,7 @@ static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, co
   // touch smaller than the normal hero bullet to leave room for the reason text.
   int r = (int)(DISC_R * ((SX + SY) / 2)); if (r > 31) r = 31;
   GPoint disc = GPoint(bounds.size.w / 2, (int)(22 * SY) + r);
-#if defined(PBL_COLOR)
-  graphics_context_set_fill_color(ctx, GColorFromRGB(L->r, L->g, L->b));
-#else
-  graphics_context_set_fill_color(ctx, GColorWhite);
-#endif
-  graphics_fill_circle(ctx, disc, r);
-
-  bool bigLetter = (r >= 28);
-  GFont lf = fonts_get_system_font(bigLetter ? FONT_KEY_BITHAM_42_BOLD : FONT_KEY_BITHAM_30_BLACK);
-  GSize ls = graphics_text_layout_get_content_size(L->label, lf,
-               GRect(0, 0, 2 * r + 8, 2 * r + 8), GTextOverflowModeFill, GTextAlignmentCenter);
-#if defined(PBL_COLOR)
-  int lum = (77 * L->r + 150 * L->g + 29 * L->b) >> 8;
-  graphics_context_set_text_color(ctx, lum > 176 ? GColorBlack : GColorWhite);
-#else
-  graphics_context_set_text_color(ctx, GColorBlack);
-#endif
-  int lnudge = bigLetter ? -7 : -4;
-  int lbox = 2 * r + 16;
-  graphics_draw_text(ctx, L->label, lf,
-    GRect(disc.x - lbox / 2, disc.y - ls.h / 2 + lnudge, lbox, ls.h + 8),
-    GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  draw_bullet(ctx, disc, r, L);
 
   // Only emery/gabbro (>=200px tall) have the headroom for the larger type; on
   // 144x168 and round, smaller fonts keep the reason off the station footer.
@@ -168,37 +202,7 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   nx += (int)((SX - 1.0f) * 26.0f);
 #endif
 
-#if defined(PBL_COLOR)
-  graphics_context_set_fill_color(ctx, GColorFromRGB(L->r, L->g, L->b));
-#else
-  graphics_context_set_fill_color(ctx, GColorWhite);
-#endif
-  graphics_fill_circle(ctx, disc, r);
-
-  // The disc scales with the screen but system fonts don't, so the roundel
-  // letter looks lost on the bigger displays. Step up to the largest bold face
-  // once the disc grows past basalt's radius.
-  bool bigLetter = (r >= 28);
-  GFont lf = fonts_get_system_font(bigLetter ? FONT_KEY_BITHAM_42_BOLD : FONT_KEY_BITHAM_30_BLACK);
-  GSize ls = graphics_text_layout_get_content_size(L->label, lf,
-               GRect(0, 0, 2 * r + 8, 2 * r + 8), GTextOverflowModeFill, GTextAlignmentCenter);
-#if defined(PBL_COLOR)
-  // MTA bullets carry white text, except the light-yellow N/Q/R/W line, which
-  // uses black. Decide from the disc's luminance so it tracks the line color.
-  int lum = (77 * L->r + 150 * L->g + 29 * L->b) >> 8;   // ~Rec.601 (0.299/0.587/0.114)
-  graphics_context_set_text_color(ctx, lum > 176 ? GColorBlack : GColorWhite);
-#else
-  graphics_context_set_text_color(ctx, GColorBlack);     // black on the white disc
-#endif
-  // Both Bitham faces carry top padding so the cap sits high in its line box;
-  // nudge up to visually center the glyph on the disc. The 42 box is taller,
-  // so it needs a larger nudge than the 30. Draw centered in a symmetric box on
-  // the disc so single glyphs are optically centered (left-align biases right).
-  int lnudge = bigLetter ? -7 : -4;
-  int lbox = 2 * r + 16;
-  graphics_draw_text(ctx, L->label, lf,
-    GRect(disc.x - lbox / 2, disc.y - ls.h / 2 + lnudge, lbox, ls.h + 8),
-    GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  draw_bullet(ctx, disc, r, L);
 
   graphics_context_set_text_color(ctx, GColorWhite);
   // The number's vertical offset from the disc center is a FONT-METRIC
