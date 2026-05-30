@@ -26,5 +26,12 @@
   "FSN": "Franklin Av", "FSS": "Prospect Park",
   "HN": "Broad Channel", "HS": "Rockaway Park-Beach 116 St",
   "SIN": "St George", "SIS": "Tottenville",
-  "SIRN": "St George", "SIRS": "Tottenville"
+  "SIRN": "St George", "SIRS": "Tottenville",
+  "862N": "World Trade Ctr", "862S": "Newark",
+  "859N": "33 St", "859S": "Hoboken",
+  "860N": "World Trade Ctr", "860S": "Hoboken",
+  "861N": "33 St", "861S": "Journal Sq",
+  "1024N": "33 St", "1024S": "Journal Sq",
+  "74320N": "Harrison", "74320S": "Newark",
+  "77285N": "33 St", "77285S": "World Trade Ctr"
 }
