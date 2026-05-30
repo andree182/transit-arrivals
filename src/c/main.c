@@ -9,6 +9,7 @@
 #define PERSIST_SEL    5
 #define PERSIST_NEAREST_POS 6
 #define PERSIST_SEEN_HELP   7
+#define PERSIST_VIEW        8   // packed (s_line << 8 | s_dir): last line+direction shown
 
 // Upward warning triangle for the hero alert badge (16x14).
 static const GPathInfo WARN_TRI = { 3, (GPoint[]){ {8, 0}, {16, 14}, {0, 14} } };
@@ -567,18 +568,28 @@ static void ring_prev(ClickRecognizerRef r, void *c) {
   switch_to((uint8_t)((s_sel + rl - 1) % rl));
 }
 
+static void persist_view(void) {
+  persist_write_int(PERSIST_VIEW, ((int)s_line << 8) | s_dir);
+}
+static void clamp_view(void) {
+  if (!s_have_bundle || s_bundle.nLines == 0) { s_line = 0; s_dir = 0; return; }
+  if (s_line >= s_bundle.nLines) s_line = 0;
+  uint8_t nd = s_bundle.lines[s_line].nDirs;
+  if (nd == 0 || s_dir >= nd) s_dir = 0;
+}
+
 static void next_line(ClickRecognizerRef r, void *c) {
   if (!s_have_bundle || s_bundle.nLines == 0) return;
-  s_line = (s_line + 1) % s_bundle.nLines; s_dir = 0; render_dispatch();
+  s_line = (s_line + 1) % s_bundle.nLines; s_dir = 0; persist_view(); render_dispatch();
 }
 static void prev_line(ClickRecognizerRef r, void *c) {
   if (!s_have_bundle || s_bundle.nLines == 0) return;
-  s_line = (s_line + s_bundle.nLines - 1) % s_bundle.nLines; s_dir = 0; render_dispatch();
+  s_line = (s_line + s_bundle.nLines - 1) % s_bundle.nLines; s_dir = 0; persist_view(); render_dispatch();
 }
 static void flip_dir(ClickRecognizerRef r, void *c) {
   if (!s_have_bundle) return;
   uint8_t nd = s_bundle.lines[s_line].nDirs; if (nd == 0) return;
-  s_dir = (s_dir + 1) % nd; render_dispatch();
+  s_dir = (s_dir + 1) % nd; persist_view(); render_dispatch();
 }
 static void open_alerts_from_hero(ClickRecognizerRef r, void *c) {
   if (has_alerts()) open_alerts();
@@ -634,10 +645,16 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
   Tuple *err = dict_find(iter, MESSAGE_KEY_ErrorCode);
   Tuple *bun = dict_find(iter, MESSAGE_KEY_Bundle);
   if (bun) {
+    char prev_id[12];
+    prev_id[0] = '\0';
+    if (s_have_bundle) { strncpy(prev_id, s_bundle.id, sizeof(prev_id) - 1); prev_id[sizeof(prev_id) - 1] = '\0'; }
     if (bundle_decode(bun->value->data, bun->length, &s_bundle)) {
-      s_have_bundle = true; s_error = -1; s_line = 0; s_dir = 0;
+      s_have_bundle = true; s_error = -1;
+      if (strcmp(prev_id, s_bundle.id) != 0) { s_line = 0; s_dir = 0; }  // new station: start at the top
+      else clamp_view();                                                 // same station refresh: keep the user's view
       s_switching = false;
       persist_write_data(PERSIST_BUNDLE, bun->value->data, bun->length);
+      persist_view();
       int fi = favorites_index_of(s_bundle.id);
       if (fi >= 0) favorites_update_name((uint8_t)fi, s_bundle.station);
     }
@@ -772,6 +789,12 @@ static void init(void) {
   s_sel = persist_exists(PERSIST_SEL) ? (uint8_t)persist_read_int(PERSIST_SEL) : 0;
   clamp_sel();
   load_cached_bundle();
+  if (persist_exists(PERSIST_VIEW)) {
+    int v = persist_read_int(PERSIST_VIEW);
+    s_line = (uint8_t)((v >> 8) & 0xff);
+    s_dir = (uint8_t)(v & 0xff);
+    clamp_view();
+  }
   s_window = window_create();
   window_set_background_color(s_window, GColorBlack);
   window_set_window_handlers(s_window, (WindowHandlers){ .load = window_load, .unload = window_unload });
