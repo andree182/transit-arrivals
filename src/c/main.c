@@ -24,7 +24,7 @@ static uint8_t s_sel = 0;       // ring index: 0..ring_len()-1
 static uint8_t s_nearest_pos = 0; // 0..favorites_count() = Nearest slot; 255 = off
 static bool s_switching = false;// true between a ring switch and the next bundle
 static char s_hint[FAV_NAME_LEN];
-static char s_alerts[340];       // active service-alert headlines, "\n"-joined ("" = none)
+static char s_alerts[700];       // active service-alert headlines, "\n"-joined ("" = none)
 static GPath *s_warn_path;       // warning-triangle badge on the hero screen
 static Window *s_settings;
 static MenuLayer *s_menu;
@@ -525,12 +525,13 @@ static void help_load(Window *w) {
   text_layer_set_background_color(s_help_body, GColorClear);
   text_layer_set_text_color(s_help_body, GColorWhite);
   text_layer_set_text_alignment(s_help_body, PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentLeft));
-  text_layer_set_font(s_help_body, fonts_get_system_font(PBL_IF_ROUND_ELSE(FONT_KEY_GOTHIC_14, FONT_KEY_GOTHIC_18)));
+  text_layer_set_font(s_help_body, fonts_get_system_font(FONT_KEY_GOTHIC_14));   // 14 both shapes so five rows fit
   text_layer_set_text(s_help_body,
     "UP/DN — Line\n"
     "SELECT — Direction\n"
     "Hold SELECT — Menu\n"
-    "Hold UP/DN — Station");
+    "Hold UP/DN — Station\n"
+    "Hold BACK — Alerts");
   layer_add_child(root, text_layer_get_layer(s_help_body));
 
   int note_top = PBL_IF_ROUND_ELSE(b.size.h - 64, b.size.h - 46);
@@ -588,6 +589,9 @@ static void flip_dir(ClickRecognizerRef r, void *c) {
   uint8_t nd = s_bundle.lines[s_line].nDirs; if (nd == 0) return;
   s_dir = (s_dir + 1) % nd; render_dispatch();
 }
+static void open_alerts_from_hero(ClickRecognizerRef r, void *c) {
+  if (has_alerts()) open_alerts();
+}
 static void click_config(void *ctx) {
   window_single_click_subscribe(BUTTON_ID_UP, prev_line);
   window_single_click_subscribe(BUTTON_ID_DOWN, next_line);
@@ -595,6 +599,7 @@ static void click_config(void *ctx) {
   window_long_click_subscribe(BUTTON_ID_SELECT, 0, open_settings, NULL);
   window_long_click_subscribe(BUTTON_ID_UP, 0, ring_prev, NULL);
   window_long_click_subscribe(BUTTON_ID_DOWN, 0, ring_next, NULL);
+  window_long_click_subscribe(BUTTON_ID_BACK, 0, open_alerts_from_hero, NULL);  // tap BACK still exits
 }
 
 static void inbox_received(DictionaryIterator *iter, void *ctx) {
