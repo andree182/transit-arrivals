@@ -8,6 +8,7 @@
 #define PERSIST_BUNDLE 1
 #define PERSIST_SEL    5
 #define PERSIST_NEAREST_POS 6
+#define PERSIST_SEEN_HELP   7
 
 // Upward warning triangle for the hero alert badge (16x14).
 static const GPathInfo WARN_TRI = { 3, (GPoint[]){ {8, 0}, {16, 14}, {0, 14} } };
@@ -36,6 +37,21 @@ static Window    *s_confirm;         // remove-confirmation window
 static uint8_t    s_confirm_row = 0;
 static TextLayer *s_confirm_msg, *s_confirm_hint;
 
+// Marquee for the selected manage row's subtitle (the "instructions"): pause,
+// scroll left to reveal the tail, pause, reset, loop. Only runs while a row's
+// subtitle is wider than the cell.
+#define MARQ_INSET_RECT 4
+#define MARQ_INSET_ROUND 22
+#define MARQ_DELAY_MS  1000          // pause before scrolling starts
+#define MARQ_STEP_MS     60          // time between scroll steps
+#define MARQ_STEP_PX      3          // pixels per scroll step
+#define MARQ_END_MS    1400          // pause at the end before resetting
+static int       s_marq_row = -1;    // selected manage row, or -1
+static int       s_marq_x = 0;       // current horizontal scroll offset (px)
+static int       s_marq_max = 0;     // how far the subtitle overflows the cell
+static int       s_manage_w = 144;   // manage menu width, for overflow math
+static AppTimer *s_marq_timer = NULL;
+
 static void render_dispatch(void);
 static void open_settings(ClickRecognizerRef r, void *c);
 static void open_manage(void);
@@ -46,6 +62,12 @@ static void push_favsync(void);
 static Window     *s_alerts_win;
 static ScrollLayer *s_alerts_scroll;
 static TextLayer  *s_alerts_text;
+
+// First-run controls card.
+static Window    *s_help;
+static TextLayer *s_help_title;
+static TextLayer *s_help_body;
+static TextLayer *s_help_note;
 
 // The ring is favorites in stored order with the Nearest slot inserted at
 // s_nearest_pos. With no favorites, Nearest is forced on so the ring is never
@@ -250,22 +272,88 @@ static void confirm_unload(Window *w) {
 
 static uint16_t manage_num_rows(MenuLayer *m, uint16_t s, void *c) { return ring_len(); }
 
-static void manage_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void *c) {
-  bool moving = (s_move_row == (int)idx->row);
-  if (ring_is_nearest(idx->row)) {
-    const char *sub = moving ? "Up/Down move · SELECT drop" : "Auto by GPS · hold SEL: off";
-    menu_cell_basic_draw(ctx, cell, "Nearest", sub, NULL);
+// Title and subtitle ("" if none) for a manage ring row. Shared by the row
+// renderer and the marquee width calculation so they never disagree.
+static void manage_row_text(uint16_t row, const char **title, const char **sub) {
+  bool moving = (s_move_row == (int)row);
+  if (ring_is_nearest(row)) {
+    *title = "Nearest";
+    *sub = moving ? "Up/Down move · SELECT drop" : "Auto by GPS · hold SEL to turn off";
     return;
   }
-  const Fav *f = favorites_get(ring_fav_index(idx->row));
-  if (!f) return;
-  if (moving) {
-    menu_cell_basic_draw(ctx, cell, f->label[0] ? f->label : f->name, "Up/Down move · SELECT drop", NULL);
-  } else if (f->label[0]) {
-    menu_cell_basic_draw(ctx, cell, f->label, f->name, NULL);  // label as title, station name beneath
+  const Fav *f = favorites_get(ring_fav_index(row));
+  if (!f) { *title = ""; *sub = ""; return; }
+  if (moving)            { *title = f->label[0] ? f->label : f->name; *sub = "Up/Down move · SELECT drop"; }
+  else if (f->label[0])  { *title = f->label; *sub = f->name; }
+  else                   { *title = f->name; *sub = ""; }
+}
+
+static int marq_inset(void) { return PBL_IF_ROUND_ELSE(MARQ_INSET_ROUND, MARQ_INSET_RECT); }
+
+static void marq_tick(void *ctx);
+static void marq_schedule(uint32_t ms) {
+  if (s_marq_timer) app_timer_cancel(s_marq_timer);
+  s_marq_timer = app_timer_register(ms, marq_tick, NULL);
+}
+static void marq_tick(void *ctx) {
+  s_marq_timer = NULL;
+  if (s_marq_max <= 0 || s_marq_row < 0) return;
+  if (s_marq_x >= s_marq_max) {            // tail fully shown → reset and long pause
+    s_marq_x = 0;
+    marq_schedule(MARQ_DELAY_MS);
   } else {
-    menu_cell_basic_draw(ctx, cell, f->name, NULL, NULL);
+    s_marq_x += MARQ_STEP_PX;
+    if (s_marq_x >= s_marq_max) { s_marq_x = s_marq_max; marq_schedule(MARQ_END_MS); }
+    else                          marq_schedule(MARQ_STEP_MS);
   }
+  if (s_manage_menu) layer_mark_dirty(menu_layer_get_layer(s_manage_menu));
+}
+// Point the marquee at `row`, measure its subtitle overflow, and arm the timer.
+static void marq_set_row(int row) {
+  s_marq_row = row;
+  s_marq_x = 0;
+  s_marq_max = 0;
+  const char *title, *sub;
+  manage_row_text((uint16_t)row, &title, &sub);
+  if (sub && sub[0]) {
+    int avail = s_manage_w - 2 * marq_inset();
+    GSize sz = graphics_text_layout_get_content_size(sub,
+                 fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                 GRect(0, 0, 2000, 24), GTextOverflowModeFill, GTextAlignmentLeft);
+    if (sz.w > avail) s_marq_max = sz.w - avail + 4;   // +4 so the last glyph clears
+  }
+  marq_schedule(MARQ_DELAY_MS);
+}
+static void marq_stop(void) {
+  if (s_marq_timer) { app_timer_cancel(s_marq_timer); s_marq_timer = NULL; }
+  s_marq_row = -1; s_marq_x = 0; s_marq_max = 0;
+}
+
+static void manage_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void *c) {
+  const char *title, *sub;
+  manage_row_text(idx->row, &title, &sub);
+  bool scrolling = ((int)idx->row == s_marq_row) && s_marq_max > 0;
+  if (!scrolling) {
+    menu_cell_basic_draw(ctx, cell, title, (sub && sub[0]) ? sub : NULL, NULL);
+    return;
+  }
+  // Selected row whose subtitle overflows: draw the title normally and slide the
+  // subtitle left by s_marq_x. The menu clips drawing to the cell, so the
+  // off-cell part of the subtitle is hidden.
+  GColor fg = menu_cell_layer_is_highlighted(cell) ? GColorBlack : GColorWhite;
+  GRect cb = layer_get_bounds(cell);
+  int inset = marq_inset();
+  graphics_context_set_text_color(ctx, fg);
+  graphics_draw_text(ctx, title, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+    GRect(inset, -2, cb.size.w - 2 * inset, 26),
+    GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+  graphics_draw_text(ctx, sub, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+    GRect(inset - s_marq_x, 22, 2000, 22),
+    GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+}
+
+static void manage_selection_changed(MenuLayer *m, MenuIndex new_index, MenuIndex old_index, void *ctx) {
+  marq_set_row(new_index.row);
 }
 
 // Move the ring slot at row by dir (+1 down / -1 up). Updates favorite order or
@@ -298,6 +386,7 @@ static void manage_up(ClickRecognizerRef r, void *c) {
     s_move_row = ring_move(s_move_row, -1);
     menu_layer_set_selected_index(s_manage_menu, MenuIndex(0, s_move_row), MenuRowAlignCenter, false);
     menu_layer_reload_data(s_manage_menu);
+    marq_set_row(s_move_row);
   }
 }
 static void manage_down(ClickRecognizerRef r, void *c) {
@@ -307,6 +396,7 @@ static void manage_down(ClickRecognizerRef r, void *c) {
     s_move_row = ring_move(s_move_row, +1);
     menu_layer_set_selected_index(s_manage_menu, MenuIndex(0, s_move_row), MenuRowAlignCenter, false);
     menu_layer_reload_data(s_manage_menu);
+    marq_set_row(s_move_row);
   }
 }
 static void manage_select(ClickRecognizerRef r, void *c) {
@@ -314,6 +404,7 @@ static void manage_select(ClickRecognizerRef r, void *c) {
   if (s_move_row < 0) s_move_row = idx.row;   // enter move mode for selected row
   else                s_move_row = -1;        // drop
   menu_layer_reload_data(s_manage_menu);
+  marq_set_row(idx.row);                       // subtitle changed with the mode
 }
 static void manage_remove(ClickRecognizerRef r, void *c) {
   if (s_move_row >= 0) return;                 // no actions mid-move
@@ -341,10 +432,12 @@ static void manage_click_config(void *ctx) {
 static void manage_load(Window *w) {
   Layer *root = window_get_root_layer(w);
   GRect b = layer_get_bounds(root);
+  s_manage_w = b.size.w;
   s_manage_menu = menu_layer_create(b);
   menu_layer_set_callbacks(s_manage_menu, NULL, (MenuLayerCallbacks){
     .get_num_rows = manage_num_rows,
     .draw_row = manage_draw_row,
+    .selection_changed = manage_selection_changed,
   });
   menu_layer_set_normal_colors(s_manage_menu, GColorBlack, GColorWhite);
   menu_layer_set_highlight_colors(s_manage_menu,
@@ -353,8 +446,9 @@ static void manage_load(Window *w) {
   // Custom provider (NOT menu_layer_set_click_config_onto_window) so move mode
   // can repurpose Up/Down.
   window_set_click_config_provider_with_context(w, manage_click_config, w);
+  marq_set_row(0);   // selection_changed doesn't fire for the initial row
 }
-static void manage_unload(Window *w) { menu_layer_destroy(s_manage_menu); }
+static void manage_unload(Window *w) { marq_stop(); menu_layer_destroy(s_manage_menu); }
 
 static void open_manage(void) {
   s_move_row = -1;
@@ -382,6 +476,58 @@ static void alerts_unload(Window *w) {
   scroll_layer_destroy(s_alerts_scroll);
 }
 static void open_alerts(void) { window_stack_push(s_alerts_win, true); }
+
+static void help_dismiss(ClickRecognizerRef r, void *c) {
+  persist_write_bool(PERSIST_SEEN_HELP, true);
+  window_stack_remove(s_help, true);
+}
+static void help_click_config(void *ctx) {
+  // Any button dismisses; BACK is overridden so it also records "seen".
+  window_single_click_subscribe(BUTTON_ID_SELECT, help_dismiss);
+  window_single_click_subscribe(BUTTON_ID_UP, help_dismiss);
+  window_single_click_subscribe(BUTTON_ID_DOWN, help_dismiss);
+  window_single_click_subscribe(BUTTON_ID_BACK, help_dismiss);
+}
+static void help_load(Window *w) {
+  Layer *root = window_get_root_layer(w);
+  GRect b = layer_get_bounds(root);
+  int bx = PBL_IF_ROUND_ELSE(26, 6);
+  int top = PBL_IF_ROUND_ELSE(18, 4);
+
+  s_help_title = text_layer_create(GRect(4, top, b.size.w - 8, 28));
+  text_layer_set_background_color(s_help_title, GColorClear);
+  text_layer_set_text_color(s_help_title, GColorWhite);
+  text_layer_set_text_alignment(s_help_title, GTextAlignmentCenter);
+  text_layer_set_font(s_help_title, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  text_layer_set_text(s_help_title, "Controls");
+  layer_add_child(root, text_layer_get_layer(s_help_title));
+
+  s_help_body = text_layer_create(GRect(bx, top + 30, b.size.w - 2 * bx, 96));
+  text_layer_set_background_color(s_help_body, GColorClear);
+  text_layer_set_text_color(s_help_body, GColorWhite);
+  text_layer_set_text_alignment(s_help_body, PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentLeft));
+  text_layer_set_font(s_help_body, fonts_get_system_font(PBL_IF_ROUND_ELSE(FONT_KEY_GOTHIC_14, FONT_KEY_GOTHIC_18)));
+  text_layer_set_text(s_help_body,
+    "UP/DN — Line\n"
+    "SELECT — Direction\n"
+    "Hold SELECT — Menu\n"
+    "Hold UP/DN — Station");
+  layer_add_child(root, text_layer_get_layer(s_help_body));
+
+  int note_top = PBL_IF_ROUND_ELSE(b.size.h - 64, b.size.h - 46);
+  s_help_note = text_layer_create(GRect(bx, note_top, b.size.w - 2 * bx, b.size.h - note_top));
+  text_layer_set_background_color(s_help_note, GColorClear);
+  text_layer_set_text_color(s_help_note, GColorLightGray);
+  text_layer_set_text_alignment(s_help_note, GTextAlignmentCenter);
+  text_layer_set_font(s_help_note, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_text(s_help_note, "Add any station in the Pebble app. Press a button.");
+  layer_add_child(root, text_layer_get_layer(s_help_note));
+}
+static void help_unload(Window *w) {
+  text_layer_destroy(s_help_title);
+  text_layer_destroy(s_help_body);
+  text_layer_destroy(s_help_note);
+}
 
 static void open_settings(ClickRecognizerRef r, void *c) {
   window_stack_push(s_settings, true);
@@ -621,11 +767,19 @@ static void init(void) {
   window_set_background_color(s_alerts_win, GColorBlack);
   window_set_window_handlers(s_alerts_win, (WindowHandlers){ .load = alerts_load, .unload = alerts_unload });
 
+  s_help = window_create();
+  window_set_background_color(s_help, GColorBlack);
+  window_set_window_handlers(s_help, (WindowHandlers){ .load = help_load, .unload = help_unload });
+  window_set_click_config_provider(s_help, help_click_config);
+
   app_message_register_inbox_received(inbox_received);
   app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
 
   tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
   s_poll = app_timer_register(30000, poll_cb, NULL);
+
+  // First launch: show the controls card on top of the hero.
+  if (!persist_read_bool(PERSIST_SEEN_HELP)) window_stack_push(s_help, true);
 }
 static void deinit(void) {
   publish_glance();
@@ -636,5 +790,6 @@ static void deinit(void) {
   window_destroy(s_manage);
   window_destroy(s_confirm);
   window_destroy(s_alerts_win);
+  window_destroy(s_help);
 }
 int main(void) { init(); app_event_loop(); deinit(); }
