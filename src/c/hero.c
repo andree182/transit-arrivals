@@ -97,6 +97,12 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
     disc.x += hshift;
     nx += hshift;
   }
+#else
+  // On the wider rect displays the reference layout leaves the number tucked
+  // tight against the disc and the whole group biased left. Nudge the count
+  // right in proportion to how much wider the screen is than basalt: zero on
+  // basalt/diorite/flint (pixel-identical), a touch of air on emery.
+  nx += (int)((SX - 1.0f) * 26.0f);
 #endif
 
 #if defined(PBL_COLOR)
