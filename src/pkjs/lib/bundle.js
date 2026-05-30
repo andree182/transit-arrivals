@@ -30,7 +30,7 @@ function dirCode(route, dir) {
 
 function encodeBundle(stationId, stationName, lines, epochBase, colorFn) {
   var b = [];
-  b.push(4);                       // version
+  b.push(5);                       // version
   putU32(b, epochBase);
   putStr(b, stationName, 39);
   putStr(b, stationId, 11);
@@ -52,6 +52,11 @@ function encodeBundle(stationId, stationName, lines, epochBase, colorFn) {
         var times = d.times.slice(0, 6);
         b.push(times.length & 0xff);
         times.forEach(function (t) { putU16(b, t - epochBase); });
+        // Express bitmask: bit a set => arrival a is an express (diamond) train.
+        var exp = d.exp || [];
+        var mask = 0;
+        for (var k = 0; k < times.length; k++) if (exp[k]) mask |= (1 << k);
+        b.push(mask & 0xff);
       });
     }
   });

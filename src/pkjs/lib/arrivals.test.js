@@ -20,6 +20,33 @@ test('groups by line then direction, sorted ascending, station-filtered', () => 
   assert.ok(north.dest.length > 0);                  // a destination label
 });
 
+test('express folds into the base line, tagged express, time-sorted with locals', () => {
+  const now = 900;
+  const rows = [
+    { route: '6',  stop: '601N', time: now + 300, dest: null },
+    { route: '6X', stop: '601N', time: now + 120, dest: null },
+    { route: '6',  stop: '601N', time: now + 600, dest: null }
+  ];
+  const out = buildArrivals(rows, '601', now);
+  assert.strictEqual(out.length, 1);                          // one merged "6" bullet
+  assert.strictEqual(out[0].line, '6');
+  const n = out[0].directions.find(d => d.dir === 'N');
+  assert.deepStrictEqual(n.times, [now + 120, now + 300, now + 600]); // both services, sorted
+  assert.deepStrictEqual(n.exp, [true, false, false]);        // soonest train is the express
+});
+
+test('a lone express train labels via its base line terminal', () => {
+  const out = buildArrivals([{ route: '6X', stop: '601N', time: 1000 }], '601', 900);
+  assert.strictEqual(out[0].line, '6');
+  assert.strictEqual(out[0].directions[0].dest, 'Pelham Bay Park'); // TERMINALS['6N']
+  assert.deepStrictEqual(out[0].directions[0].exp, [true]);
+});
+
+test('local-only arrivals carry an all-false express flag', () => {
+  const out = buildArrivals([{ route: '6', stop: '601N', time: 1000 }], '601', 900);
+  assert.deepStrictEqual(out[0].directions[0].exp, [false]);
+});
+
 test('a station complex matches arrivals across all its member stops', () => {
   const cx = [
     { route: '6', stop: '635N', time: 1000 }, // 456 platform

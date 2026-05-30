@@ -3,9 +3,9 @@ const assert = require('node:assert');
 const { encodeBundle } = require('./bundle');
 const { colorForLine } = require('./lines');
 
-// v4 header: version(1) + epoch(4) + station(39) + id(11) + lineCount(1) = 56.
+// v5 header: version(1) + epoch(4) + station(39) + id(11) + lineCount(1) = 56.
 // Per line: label(2) + rgb(3) + nDirs(1) = 6, then per dir: dest(20) + dir(1) +
-// nArr(1) + deltas. So for the first line/dir:
+// nArr(1) + deltas(2*nArr) + expMask(1). So for the first line/dir:
 const LINE_COUNT = 55;
 const DIR_CODE = 56 + 2 + 3 + 1 + 20;   // 82
 const N_ARR = DIR_CODE + 1;             // 83
@@ -14,7 +14,7 @@ const DELTA0 = N_ARR + 1;               // 84
 test('encodes header, station, id, and one line/dir/arrival', () => {
   const arr = [{ line: 'N', directions: [{ dir: 'N', dest: 'Astoria-Ditmars Blvd', times: [1060, 1300] }] }];
   const bytes = encodeBundle('R01', 'Astoria-Ditmars Blvd', arr, 1000, colorForLine);
-  assert.strictEqual(bytes[0], 4);                        // version
+  assert.strictEqual(bytes[0], 5);                        // version
   assert.strictEqual(bytes[1] | (bytes[2] << 8) | (bytes[3] << 16) | (bytes[4] * 16777216), 1000);
   assert.strictEqual(bytes[LINE_COUNT], 1);               // lineCount
   assert.strictEqual(bytes[DIR_CODE], 2);                 // N northbound heads to Queens (2)
@@ -50,9 +50,24 @@ test('long suffixed name round-trips without truncation', () => {
   assert.strictEqual(out, name);
 });
 
-test('version byte is 4', () => {
+test('version byte is 5', () => {
   const bytes = encodeBundle('x', 'y', [], 1000, () => [0, 0, 0]);
-  assert.strictEqual(bytes[0], 4);
+  assert.strictEqual(bytes[0], 5);
+});
+
+test('encodes a per-arrival express bitmask after the deltas', () => {
+  const arr = [{ line: '6', directions: [{ dir: 'N', dest: 'd', times: [1100, 1200, 1300], exp: [false, true, false] }] }];
+  const bytes = encodeBundle('x', 'y', arr, 1000, () => [0, 0, 0]);
+  assert.strictEqual(bytes[N_ARR], 3);                    // three arrivals
+  const EXP_MASK = DELTA0 + 3 * 2;                        // deltas occupy 2 bytes each
+  assert.strictEqual(bytes[EXP_MASK], 0b010);            // only arrival index 1 is express
+});
+
+test('omitting the exp array yields an all-local (zero) mask', () => {
+  const arr = [{ line: '6', directions: [{ dir: 'N', dest: 'd', times: [1100, 1200] }] }];
+  const bytes = encodeBundle('x', 'y', arr, 1000, () => [0, 0, 0]);
+  const EXP_MASK = DELTA0 + 2 * 2;
+  assert.strictEqual(bytes[EXP_MASK], 0);
 });
 
 test('encodes a synthetic suspended line as nDirs=0 + notice', () => {

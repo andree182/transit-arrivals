@@ -42,20 +42,29 @@ static void draw_bullet_label(GContext *ctx, GPoint disc, int r, const char *lab
     GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 }
 
-// PATH lines carry 2-char labels (NW/HW/W3/JS/JH/NH/H3); subway bullets are a
-// single char (the "SIR" service is 3). Give PATH a rounded pill and the subway
-// its iconic circle, matching each system's real signage.
-static bool is_pill_label(const char *label) { return strlen(label) == 2; }
-
-// Fill the bullet shape in the line color and draw its centered label. Label is
-// white, except on a pale disc (the yellow N/Q/R/W line) where black reads better.
-static void draw_bullet(GContext *ctx, GPoint disc, int r, const LineView *L) {
+// Bullet shape follows each service's real signage:
+//   - express runs get a DIAMOND. Express isn't a separate line: a rider boards
+//     whichever train comes next, so the bullet turns into a diamond only while
+//     the soonest train is an express, and reverts to a circle once it passes.
+//   - PATH lines carry 2-char labels (NW/HW/W3/JS/JH/NH/H3) and get a PILL;
+//   - everything else (subway locals, the 3-char "SIR") keeps the iconic CIRCLE.
+static void draw_bullet(GContext *ctx, GPoint disc, int r, const LineView *L, bool express) {
 #if defined(PBL_COLOR)
   graphics_context_set_fill_color(ctx, GColorFromRGB(L->r, L->g, L->b));
 #else
   graphics_context_set_fill_color(ctx, GColorWhite);
 #endif
-  if (is_pill_label(L->label)) {
+  if (express) {
+    // A square rotated 45°, vertices on the disc's bounding box so it keeps the
+    // circle's footprint (layout downstream is unchanged). Built per-draw because
+    // r varies by platform; the points array outlives the GPath it feeds.
+    GPoint pts[4] = { GPoint(disc.x, disc.y - r), GPoint(disc.x + r, disc.y),
+                      GPoint(disc.x, disc.y + r), GPoint(disc.x - r, disc.y) };
+    GPathInfo info = { 4, pts };
+    GPath *dp = gpath_create(&info);
+    gpath_draw_filled(ctx, dp);
+    gpath_destroy(dp);
+  } else if (strlen(L->label) == 2) {
     int pw = 2 * r, ph = (int)(1.5f * r);
     graphics_fill_rect(ctx, GRect(disc.x - pw / 2, disc.y - ph / 2, pw, ph), ph / 2, GCornersAll);
   } else {
@@ -78,7 +87,7 @@ static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, co
   // touch smaller than the normal hero bullet to leave room for the reason text.
   int r = (int)(DISC_R * ((SX + SY) / 2)); if (r > 31) r = 31;
   GPoint disc = GPoint(bounds.size.w / 2, (int)(22 * SY) + r);
-  draw_bullet(ctx, disc, r, L);
+  draw_bullet(ctx, disc, r, L, false);
 
   // Only emery/gabbro (>=200px tall) have the headroom for the larger type; on
   // 144x168 and round, smaller fonts keep the reason off the station footer.
@@ -202,7 +211,10 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   nx += (int)((SX - 1.0f) * 26.0f);
 #endif
 
-  draw_bullet(ctx, disc, r, L);
+  // The soonest train (delta[0]) drives the roundel: a diamond when it's an
+  // express, the line's normal circle/pill otherwise.
+  bool headExpress = (D->expMask & 1) != 0;
+  draw_bullet(ctx, disc, r, L, headExpress);
 
   graphics_context_set_text_color(ctx, GColorWhite);
   // The number's vertical offset from the disc center is a FONT-METRIC
@@ -221,17 +233,57 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
                        GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   }
 
-  char nxt[40]; int o = snprintf(nxt, sizeof(nxt), "NEXT: ");
-  for (int a = 1; a < D->n && a < 4; a++) {
-    int m = (int)(b->epochBase + D->delta[a]) - (int)now; if (m < 0) m = 0;
-    o += snprintf(nxt + o, sizeof(nxt) - o, a > 1 ? ", %d" : "%d", m / 60);
-  }
+  // NEXT row: "NEXT" then each upcoming train's minutes, laid out left-to-right
+  // and centered as a group. Express trains (expMask bit set) get a thin uncolored
+  // diamond outline so the rider can spot them in the queue; locals sit bare.
   GFont ff = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
-  graphics_context_set_text_color(ctx, GColorLightGray);
-  int ft_inset = PBL_IF_ROUND_ELSE(24, 2);
   int ft_top = (int)(PBL_IF_ROUND_ELSE(110, 116) * SY);
-  graphics_draw_text(ctx, nxt, ff, GRect(ft_inset, ft_top, bounds.size.w - 2 * ft_inset, 24),
-                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  int ft_h = 24;
+  char ntok[3][8]; bool nexp[3]; int nTok = 0;
+  for (int a = 1; a < D->n && nTok < 3; a++) {
+    int m = (int)(b->epochBase + D->delta[a]) - (int)now; if (m < 0) m = 0;
+    snprintf(ntok[nTok], sizeof(ntok[nTok]), "%d", m / 60);
+    nexp[nTok] = (D->expMask >> a) & 1;
+    nTok++;
+  }
+  if (nTok > 0) {
+    int gap = 7;
+    int R = ft_h / 2;   // uniform diamond half-size — a true square, never stretched
+    GSize lblsz = graphics_text_layout_get_content_size("NEXT", ff,
+                    GRect(0, 0, 100, ft_h), GTextOverflowModeFill, GTextAlignmentLeft);
+    int tw[3], slot[3], total = lblsz.w + gap;
+    for (int t = 0; t < nTok; t++) {
+      GSize s = graphics_text_layout_get_content_size(ntok[t], ff,
+                  GRect(0, 0, 60, ft_h), GTextOverflowModeFill, GTextAlignmentLeft);
+      tw[t] = s.w;
+      slot[t] = nexp[t] ? (2 * R) : tw[t];   // express token reserves the diamond's full width
+      total += slot[t] + (t < nTok - 1 ? gap : 0);
+    }
+    int x = (bounds.size.w - total) / 2; if (x < 2) x = 2;
+    graphics_context_set_text_color(ctx, GColorLightGray);
+    graphics_draw_text(ctx, "NEXT", ff, GRect(x, ft_top, lblsz.w + 4, ft_h),
+                       GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+    x += lblsz.w + gap;
+    for (int t = 0; t < nTok; t++) {
+      int cx = x + slot[t] / 2, cy = ft_top + ft_h / 2;
+      graphics_context_set_text_color(ctx, GColorLightGray);
+      graphics_draw_text(ctx, ntok[t], ff, GRect(cx - tw[t] / 2, ft_top, tw[t] + 4, ft_h),
+                         GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+      if (nexp[t]) {
+        // A faint near-black diamond: just a whisper of an outline so the rider
+        // can pick out the express without it shouting over the countdown.
+        GPoint qp[4] = { GPoint(cx, cy - R), GPoint(cx + R, cy),
+                         GPoint(cx, cy + R), GPoint(cx - R, cy) };
+        GPathInfo qi = { 4, qp };
+        GPath *qg = gpath_create(&qi);
+        graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite));
+        graphics_context_set_stroke_width(ctx, 1);
+        gpath_draw_outline(ctx, qg);
+        gpath_destroy(qg);
+      }
+      x += slot[t] + gap;
+    }
+  }
 
   // Current station, dimmer, below NEXT. Wrap to two lines so long names are
   // never clipped; the box is sized for two lines of GOTHIC_14.

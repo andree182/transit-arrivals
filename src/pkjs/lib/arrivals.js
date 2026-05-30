@@ -45,23 +45,30 @@ function buildArrivals(rows, stationId, now) {
     // uses GTFS-RT direction_id (1 -> 'N' toward Manhattan, 0 -> 'S' toward NJ).
     var dir = dirOf(r.stop) || (r.dir === 1 ? 'N' : r.dir === 0 ? 'S' : null);
     if (!dir || r.time < now) return;
-    var L = byLine[r.route] || (byLine[r.route] = {});
-    (L[dir] || (L[dir] = [])).push({ time: r.time, dest: r.dest });
+    // Express variants carry a trailing 'X' (e.g. '6X'). A rider on the platform
+    // boards whichever 6 arrives next, so express folds onto the base line as one
+    // timeline; each arrival keeps an `exp` flag for the diamond marker. Shuttles
+    // (GS/FS) end in S, not X, so they stay distinct.
+    var exp = /X$/.test(r.route);
+    var key = exp ? r.route.slice(0, -1) : r.route;
+    var L = byLine[key] || (byLine[key] = {});
+    (L[dir] || (L[dir] = [])).push({ time: r.time, dest: r.dest, exp: exp });
   });
-  return Object.keys(byLine).sort().map(function (line) {
-    var dirs = Object.keys(byLine[line]).sort().map(function (dir) {
-      var arr = byLine[line][dir].sort(function (a, b) { return a.time - b.time; });
+  return Object.keys(byLine).sort().map(function (key) {
+    var dirs = Object.keys(byLine[key]).sort().map(function (dir) {
+      var arr = byLine[key][dir].sort(function (a, b) { return a.time - b.time; });
       // Headsign tracks the soonest train's real terminal (from the feed); the
       // static per-line table is the fallback when that stop isn't in the DB.
       var dest = (arr[0].dest && NAME[arr[0].dest]) ||
-                 TERMINALS[line + dir] || (dir === 'N' ? 'Northbound' : 'Southbound');
+                 TERMINALS[key + dir] || (dir === 'N' ? 'Northbound' : 'Southbound');
       return {
         dir: dir,
         dest: dest,
-        times: arr.map(function (e) { return e.time; }).slice(0, 6)
+        times: arr.map(function (e) { return e.time; }).slice(0, 6),
+        exp: arr.map(function (e) { return e.exp; }).slice(0, 6)
       };
     });
-    return { line: displayRoute(line), directions: dirs };
+    return { line: displayRoute(key), directions: dirs };
   });
 }
 module.exports = { buildArrivals: buildArrivals, _dirOf: dirOf, _stationOf: stationOf, _displayRoute: displayRoute };

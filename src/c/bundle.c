@@ -7,7 +7,7 @@ static uint32_t rd_u32(const uint8_t *p) {
 static uint16_t rd_u16(const uint8_t *p) { return (uint16_t)p[0] | ((uint16_t)p[1] << 8); }
 
 bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
-  if (len < 56 || (p[0] != 3 && p[0] != 4)) return false;
+  if (len < 56 || p[0] < 3 || p[0] > 5) return false;
   size_t i = 0;
   out->version = p[i++];
   out->epochBase = rd_u32(p + i); i += 4;
@@ -40,6 +40,13 @@ bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
       if (D->n > MAX_ARR) D->n = MAX_ARR;
       if (i + (size_t)D->n * 2 > len) return false;
       for (int a = 0; a < D->n; a++) { D->delta[a] = rd_u16(p + i); i += 2; }
+      // v5 appends a per-arrival express bitmask (bit a => arrival a is express).
+      // Older bundles (a stale cached v3/v4) have no marker: treat all as local.
+      D->expMask = 0;
+      if (out->version >= 5) {
+        if (i + 1 > len) return false;
+        D->expMask = p[i++];
+      }
     }
   }
   return true;
