@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { buildArrivals } = require('./arrivals');
+const { buildArrivals, _displayRoute } = require('./arrivals');
 
 const rows = [
   { route: 'N', stop: 'R01N', time: 1000 },
@@ -62,4 +62,39 @@ test('headsign follows the soonest train\'s real terminal', () => {
 test('falls back to the static terminal when the trip carries no dest', () => {
   const out = buildArrivals([{ route: 'A', stop: 'A30S', time: 1000 }], 'A30', 900);
   assert.strictEqual(out[0].directions[0].dest, 'Far Rockaway-Mott Av'); // TERMINALS['AS']
+});
+
+test('PATH: groups by direction_id when stop has no N/S suffix', () => {
+  const now = 1000;
+  const rows = [
+    { route: '862', dir: 1, stop: '26733', time: now + 120, dest: null },
+    { route: '862', dir: 0, stop: '26733', time: now + 300, dest: null }
+  ];
+  const out = buildArrivals(rows, '26733', now);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].line, 'NW');                  // 862 -> NW
+  const dirs = out[0].directions;
+  assert.strictEqual(dirs.length, 2);
+  const n = dirs.find((d) => d.dir === 'N');              // dir 1 -> N -> WTC
+  const s = dirs.find((d) => d.dir === 'S');              // dir 0 -> S -> Newark
+  assert.strictEqual(n.dest, 'World Trade Ctr');
+  assert.strictEqual(s.dest, 'Newark');
+});
+
+test('PATH route_ids map to 2-char display labels', () => {
+  assert.strictEqual(_displayRoute('862'), 'NW');
+  assert.strictEqual(_displayRoute('859'), 'H3');
+  assert.strictEqual(_displayRoute('77285'), 'W3');
+  assert.strictEqual(_displayRoute('Q'), 'Q');            // subway unchanged
+});
+
+test('a merged complex matches subway by parent and PATH by bare id together', () => {
+  const now = 1000;
+  const rows = [
+    { route: 'F', stop: 'D19N', time: now + 60, dest: 'D14' },           // subway side
+    { route: '862', dir: 1, stop: '26722', time: now + 120, dest: null } // PATH side
+  ];
+  const out = buildArrivals(rows, ['132', 'D19', 'L02', '26722'], now);  // 14 St merged ids
+  const lines = out.map((o) => o.line).sort();
+  assert.deepStrictEqual(lines, ['F', 'NW']);             // both systems surface at one station
 });

@@ -19,7 +19,14 @@ function stationOf(stopId) {
 // them onto the bullet riders actually see — every shuttle is the gray "S", and
 // SI is the "SIR" roundel. Headsigns stay keyed on the raw id (above, via
 // TERMINALS) so each shuttle keeps its own destinations.
+// PATH services carry numeric GTFS route_ids; map them to the 2-char colored
+// bullet riders see. Subway ids pass through (Q stays Q).
+var PATH_LABEL = {
+  '862': 'NW', '859': 'H3', '860': 'HW', '861': 'JS',
+  '1024': 'JH', '74320': 'NH', '77285': 'W3'
+};
 function displayRoute(route) {
+  if (PATH_LABEL[route]) return PATH_LABEL[route];
   if (route === 'GS' || route === 'FS' || route === 'H') return 'S';
   if (route === 'SI') return 'SIR';
   return route;
@@ -34,7 +41,9 @@ function buildArrivals(rows, stationId, now) {
   var byLine = {};
   rows.forEach(function (r) {
     if (!idSet[stationOf(r.stop)]) return;
-    var dir = dirOf(r.stop);
+    // Subway encodes direction in the N/S stop suffix; PATH has no suffix and
+    // uses GTFS-RT direction_id (1 -> 'N' toward Manhattan, 0 -> 'S' toward NJ).
+    var dir = dirOf(r.stop) || (r.dir === 1 ? 'N' : r.dir === 0 ? 'S' : null);
     if (!dir || r.time < now) return;
     var L = byLine[r.route] || (byLine[r.route] = {});
     (L[dir] || (L[dir] = [])).push({ time: r.time, dest: r.dest });
