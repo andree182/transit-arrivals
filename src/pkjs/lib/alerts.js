@@ -29,11 +29,14 @@ function isActive(periods, now) {
   return false;
 }
 
+// route_id carries raw GTFS ids (SI, FS, GS, H); station lines hold display
+// codes (SIR, S), so normalize before matching — otherwise SIR and the shuttles
+// would never match their own alerts.
 function matchesLines(informed, lines) {
   if (!Array.isArray(informed)) return false;
   for (var i = 0; i < informed.length; i++) {
     var r = informed[i] && informed[i].route_id;
-    if (r && lines.indexOf(r) >= 0) return true;
+    if (r && lines.indexOf(displayRoute(r)) >= 0) return true;
   }
   return false;
 }

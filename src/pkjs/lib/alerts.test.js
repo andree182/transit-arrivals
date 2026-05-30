@@ -25,6 +25,13 @@ test('excludes an alert whose routes do not match', () => {
   assert.deepStrictEqual(extractAlerts(f, ['Q'], NOW), []);
 });
 
+test('matches a raw GTFS route_id against its display code (SI -> SIR, FS -> S)', () => {
+  const si = feed([alert(['SI'], 'No SIR service', undefined)]);
+  assert.deepStrictEqual(extractAlerts(si, ['SIR'], NOW), ['No SIR service']);
+  const fs = feed([alert(['FS'], 'Franklin shuttle delays', undefined)]);
+  assert.deepStrictEqual(extractAlerts(fs, ['S'], NOW), ['Franklin shuttle delays']);
+});
+
 test('excludes an alert whose active period has ended', () => {
   const f = feed([alert(['Q'], 'old news', [{ start: NOW - 100, end: NOW - 10 }])]);
   assert.deepStrictEqual(extractAlerts(f, ['Q'], NOW), []);
