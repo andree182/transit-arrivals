@@ -24,6 +24,15 @@
       "FavReq",
       "Alerts"
     ],
-    "resources": { "media": [] }
+    "resources": {
+      "media": [
+        {
+          "type": "bitmap",
+          "name": "IMAGE_MENU_ICON",
+          "file": "images/menu-icon.png",
+          "menuIcon": true
+        }
+      ]
+    }
   }
 }
