@@ -26,4 +26,11 @@ function buildTrip(route, stops) {
   stops.forEach(function (s) { tu = tu.concat(lenDelim(2, stopTimeUpdate(s[0], s[1]))); });
   return Uint8Array.from(lenDelim(2, lenDelim(3, tu)));
 }
-module.exports = { build: build, buildTrip: buildTrip };
+// One FeedMessage, one PATH-style dummy trip: route_id, direction_id, and a
+// single stop_time_update at a parent station (no N/S suffix).
+function buildPathTrip(route, dirId, stopId, time) {
+  var trip = str(5, route).concat(vfield(6, dirId));   // route_id + direction_id
+  var tu = lenDelim(1, trip).concat(lenDelim(2, stopTimeUpdate(stopId, time)));
+  return Uint8Array.from(lenDelim(2, lenDelim(3, tu)));
+}
+module.exports = { build: build, buildTrip: buildTrip, buildPathTrip: buildPathTrip };
