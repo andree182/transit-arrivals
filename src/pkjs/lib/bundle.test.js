@@ -17,14 +17,23 @@ test('encodes header, station, id, and one line/dir/arrival', () => {
   assert.strictEqual(bytes[0], 3);                        // version
   assert.strictEqual(bytes[1] | (bytes[2] << 8) | (bytes[3] << 16) | (bytes[4] * 16777216), 1000);
   assert.strictEqual(bytes[LINE_COUNT], 1);               // lineCount
-  assert.strictEqual(bytes[DIR_CODE], 0);                 // dir: N northbound = uptown
+  assert.strictEqual(bytes[DIR_CODE], 2);                 // N northbound heads to Queens (2)
   assert.strictEqual(bytes[DELTA0] | (bytes[DELTA0 + 1] << 8), 60);  // 1060-1000
 });
 
-test('suppresses uptown/downtown on crosstown lines', () => {
-  const arr = [{ line: 'L', directions: [{ dir: 'N', dest: '8 Av', times: [1100] }] }];
+test('labels each direction by the borough it heads toward', () => {
+  const mk = (line, dir) => encodeBundle('x', 'y',
+    [{ line: line, directions: [{ dir: dir, dest: 'd', times: [1100] }] }], 1000, () => [0, 0, 0]);
+  assert.strictEqual(mk('4', 'N')[DIR_CODE], 3);          // 4 north = Bronx
+  assert.strictEqual(mk('4', 'S')[DIR_CODE], 1);          // 4 south = Brooklyn
+  assert.strictEqual(mk('6', 'S')[DIR_CODE], 0);          // 6 south = Manhattan
+  assert.strictEqual(mk('L', 'N')[DIR_CODE], 0);          // L toward 8 Av = Manhattan
+});
+
+test('suppresses the direction word on shuttles', () => {
+  const arr = [{ line: 'S', directions: [{ dir: 'N', dest: 'Franklin Av', times: [1100] }] }];
   const bytes = encodeBundle('x', 'y', arr, 1000, () => [0, 0, 0]);
-  assert.strictEqual(bytes[DIR_CODE], 2);                 // L = no direction word
+  assert.strictEqual(bytes[DIR_CODE], 4);                 // S = no direction word (none)
 });
 
 test('clamps deltas over 65535 and caps arrivals at 6', () => {

@@ -4,12 +4,28 @@ function putStr(arr, s, n) {
 function putU16(arr, v) { v = v < 0 ? 0 : (v > 65535 ? 65535 : v); arr.push(v & 0xff, (v >> 8) & 0xff); }
 function putU32(arr, v) { arr.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff); }
 
-// Lines where N/S don't map cleanly to uptown/downtown (crosstown, shuttles,
-// Staten Island). For these the destination headsign alone disambiguates.
-var NO_NS = { 'L': 1, 'G': 1, '7': 1, 'S': 1, 'SIR': 1 };
+// The borough each (route, N/S) direction heads toward — the label shown above
+// the destination headsign. Codes: 0 Manhattan, 1 Brooklyn, 2 Queens, 3 Bronx,
+// 4 none. "none" is for lines whose two ends sit in the same borough (the
+// shuttles, SIR) where a borough word can't pick a direction; the headsign does.
+var MAN = 0, BKN = 1, QNS = 2, BRX = 3, NONE = 4;
+var DIR = {
+  '1': { N: BRX, S: MAN }, '2': { N: BRX, S: BKN }, '3': { N: MAN, S: BKN },
+  '4': { N: BRX, S: BKN }, '5': { N: BRX, S: BKN }, '6': { N: BRX, S: MAN },
+  '7': { N: QNS, S: MAN },
+  'A': { N: MAN, S: QNS }, 'C': { N: MAN, S: BKN }, 'E': { N: QNS, S: MAN },
+  'B': { N: BRX, S: BKN }, 'D': { N: BRX, S: BKN }, 'F': { N: QNS, S: BKN },
+  'M': { N: NONE, S: NONE },
+  'G': { N: QNS, S: BKN },
+  'J': { N: QNS, S: MAN }, 'Z': { N: QNS, S: MAN },
+  'N': { N: QNS, S: BKN }, 'Q': { N: MAN, S: BKN }, 'R': { N: QNS, S: BKN }, 'W': { N: QNS, S: MAN },
+  'L': { N: MAN, S: BKN },
+  'S': { N: NONE, S: NONE }, 'SIR': { N: NONE, S: NONE }
+};
 function dirCode(route, dir) {
-  if (NO_NS[route]) return 2;          // 2 = no direction word
-  return dir === 'N' ? 0 : 1;          // 0 = uptown, 1 = downtown
+  var d = DIR[route];
+  if (!d) return NONE;
+  return dir === 'N' ? d.N : d.S;
 }
 
 function encodeBundle(stationId, stationName, lines, epochBase, colorFn) {
