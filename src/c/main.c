@@ -21,7 +21,7 @@ static bool s_have_bundle = false;
 static int s_error = -1;        // -1 none; 0 ready; 1 no-loc; 2 bad-station; 3 offline; 4 no-trains
 static uint8_t s_line = 0, s_dir = 0;
 static uint8_t s_sel = 0;       // ring index: 0..ring_len()-1
-static uint8_t s_nearest_pos = 0; // 0..favorites_count() = Nearest slot; 255 = off
+static uint8_t s_nearest_pos = 0; // 0..favorites_count() = Nearest slot position
 static bool s_switching = false;// true between a ring switch and the next bundle
 static char s_hint[FAV_NAME_LEN];
 static char s_alerts[700];       // active service-alert headlines, "\n"-joined ("" = none)
@@ -70,19 +70,19 @@ static TextLayer *s_help_body;
 static TextLayer *s_help_note;
 
 // The ring is favorites in stored order with the Nearest slot inserted at
-// s_nearest_pos. With no favorites, Nearest is forced on so the ring is never
-// empty.
+// s_nearest_pos. Nearest is permanent: it is always present and cannot be
+// hidden, so the ring is never empty. (s_nearest_pos holds only a position;
+// a legacy 255 "off" value is migrated to 0 on load.)
 static bool nearest_on(void) {
-  return s_nearest_pos != 255 || favorites_count() == 0;
+  return true;
 }
 static uint8_t nearest_idx(void) {
-  if (!nearest_on()) return 255;
   uint8_t p = (s_nearest_pos == 255) ? 0 : s_nearest_pos;
   if (p > favorites_count()) p = favorites_count();
   return p;
 }
 static uint8_t ring_len(void) {
-  return favorites_count() + (nearest_on() ? 1 : 0);
+  return favorites_count() + 1;   // favorites + the permanent Nearest slot
 }
 static bool ring_is_nearest(uint8_t ring_idx) {
   return nearest_on() && ring_idx == nearest_idx();
@@ -297,7 +297,7 @@ static void manage_row_text(uint16_t row, const char **title, const char **sub) 
   bool moving = (s_move_row == (int)row);
   if (ring_is_nearest(row)) {
     *title = "Nearest";
-    *sub = moving ? "Up/Down move · SELECT drop" : "Auto by GPS · hold SEL to turn off";
+    *sub = moving ? "Up/Down move · SELECT drop" : "Auto by GPS";
     return;
   }
   const Fav *f = favorites_get(ring_fav_index(row));
@@ -428,16 +428,7 @@ static void manage_select(ClickRecognizerRef r, void *c) {
 static void manage_remove(ClickRecognizerRef r, void *c) {
   if (s_move_row >= 0) return;                 // no actions mid-move
   MenuIndex idx = menu_layer_get_selected_index(s_manage_menu);
-  if (ring_is_nearest(idx.row)) {
-    if (favorites_count() == 0) return;        // ring would be empty; keep Nearest
-    s_nearest_pos = 255;                       // disable Nearest
-    persist_write_int(PERSIST_NEAREST_POS, s_nearest_pos);
-    clamp_sel();
-    persist_write_int(PERSIST_SEL, s_sel);
-    push_favsync();
-    menu_layer_reload_data(s_manage_menu);
-    return;
-  }
+  if (ring_is_nearest(idx.row)) return;        // Nearest is permanent; can't remove
   s_confirm_row = ring_fav_index(idx.row);     // favorite array index to remove
   window_stack_push(s_confirm, true);
 }
@@ -623,7 +614,7 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
     int n = favsync_decode(favset->value->data, favset->length, items, &nearest);
     if (n >= 0) {
       favorites_replace_all(items, (uint8_t)n);
-      s_nearest_pos = nearest;
+      s_nearest_pos = (nearest == 255) ? 0 : nearest;   // Nearest is permanent
       persist_write_int(PERSIST_NEAREST_POS, s_nearest_pos);
       clamp_sel();
       persist_write_int(PERSIST_SEL, s_sel);
@@ -767,6 +758,10 @@ static void init(void) {
   favorites_load();
   s_nearest_pos = persist_exists(PERSIST_NEAREST_POS)
     ? (uint8_t)persist_read_int(PERSIST_NEAREST_POS) : 0;
+  if (s_nearest_pos == 255) {                  // migrate legacy "off" -> permanent on
+    s_nearest_pos = 0;
+    persist_write_int(PERSIST_NEAREST_POS, s_nearest_pos);
+  }
   s_sel = persist_exists(PERSIST_SEL) ? (uint8_t)persist_read_int(PERSIST_SEL) : 0;
   clamp_sel();
   load_cached_bundle();
