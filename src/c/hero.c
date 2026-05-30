@@ -15,9 +15,63 @@ static void fmt_count(int mins, char *out, size_t n) {
   else snprintf(out, n, "%d", mins);
 }
 
+static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, const LineView *L) {
+  float SX = bounds.size.w / REF_W, SY = bounds.size.h / REF_H;
+  graphics_context_set_antialiased(ctx, true);
+
+  // Bullet disc, centered horizontally near the top.
+  int r = (int)(DISC_R * ((SX + SY) / 2)); if (r > 35) r = 35;
+  GPoint disc = GPoint(bounds.size.w / 2, (int)(34 * SY) + r);
+#if defined(PBL_COLOR)
+  graphics_context_set_fill_color(ctx, GColorFromRGB(L->r, L->g, L->b));
+#else
+  graphics_context_set_fill_color(ctx, GColorWhite);
+#endif
+  graphics_fill_circle(ctx, disc, r);
+
+  bool bigLetter = (r >= 28);
+  GFont lf = fonts_get_system_font(bigLetter ? FONT_KEY_BITHAM_42_BOLD : FONT_KEY_BITHAM_30_BLACK);
+  GSize ls = graphics_text_layout_get_content_size(L->label, lf,
+               GRect(0, 0, 2 * r + 8, 2 * r + 8), GTextOverflowModeFill, GTextAlignmentCenter);
+#if defined(PBL_COLOR)
+  int lum = (77 * L->r + 150 * L->g + 29 * L->b) >> 8;
+  graphics_context_set_text_color(ctx, lum > 176 ? GColorBlack : GColorWhite);
+#else
+  graphics_context_set_text_color(ctx, GColorBlack);
+#endif
+  int lnudge = bigLetter ? -7 : -4;
+  int lbox = 2 * r + 16;
+  graphics_draw_text(ctx, L->label, lf,
+    GRect(disc.x - lbox / 2, disc.y - ls.h / 2 + lnudge, lbox, ls.h + 8),
+    GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+
+  // "SUSPENDED" headline under the bullet.
+  int sus_top = disc.y + r + (int)(6 * SY);
+  graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorYellow, GColorWhite));
+  graphics_draw_text(ctx, "SUSPENDED", fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+    GRect(4, sus_top, bounds.size.w - 8, 30), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+
+  // Wrapped MTA reason text.
+  int rs_top = sus_top + (int)(28 * SY);
+  int rs_inset = PBL_IF_ROUND_ELSE(24, 6);
+  graphics_context_set_text_color(ctx, GColorWhite);
+  graphics_draw_text(ctx, L->notice, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+    GRect(rs_inset, rs_top, bounds.size.w - 2 * rs_inset, bounds.size.h - rs_top - 22),
+    GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+
+  // Current station at the very bottom (matches the normal hero footer color).
+  graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite));
+  int st_inset = PBL_IF_ROUND_ELSE(34, 4);
+  int st_top = (int)(PBL_IF_ROUND_ELSE(150, 150) * SY);
+  graphics_draw_text(ctx, b->station, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+    GRect(st_inset, st_top, bounds.size.w - 2 * st_inset, 18),
+    GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+}
+
 void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8_t dir, time_t now) {
   if (!b || line >= b->nLines) return;
   const LineView *L = &b->lines[line];
+  if (L->nDirs == 0) { hero_draw_suspended(ctx, bounds, b, L); return; }
   if (dir >= L->nDirs) dir = 0;
   const DirView *D = &L->dirs[dir];
   if (D->n == 0) return;
