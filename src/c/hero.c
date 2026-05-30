@@ -74,14 +74,23 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   GFont lf = fonts_get_system_font(bigLetter ? FONT_KEY_BITHAM_42_BOLD : FONT_KEY_BITHAM_30_BLACK);
   GSize ls = graphics_text_layout_get_content_size(L->label, lf,
                GRect(0, 0, 2 * r + 8, 2 * r + 8), GTextOverflowModeFill, GTextAlignmentCenter);
-  graphics_context_set_text_color(ctx, GColorBlack);
+#if defined(PBL_COLOR)
+  // MTA bullets carry white text, except the light-yellow N/Q/R/W line, which
+  // uses black. Decide from the disc's luminance so it tracks the line color.
+  int lum = (77 * L->r + 150 * L->g + 29 * L->b) >> 8;   // ~Rec.601 (0.299/0.587/0.114)
+  graphics_context_set_text_color(ctx, lum > 176 ? GColorBlack : GColorWhite);
+#else
+  graphics_context_set_text_color(ctx, GColorBlack);     // black on the white disc
+#endif
   // Both Bitham faces carry top padding so the cap sits high in its line box;
   // nudge up to visually center the glyph on the disc. The 42 box is taller,
-  // so it needs a larger nudge than the 30.
+  // so it needs a larger nudge than the 30. Draw centered in a symmetric box on
+  // the disc so single glyphs are optically centered (left-align biases right).
   int lnudge = bigLetter ? -7 : -4;
+  int lbox = 2 * r + 16;
   graphics_draw_text(ctx, L->label, lf,
-    GRect(disc.x - ls.w / 2, disc.y - ls.h / 2 + lnudge, ls.w + 2, ls.h + 8),
-    GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+    GRect(disc.x - lbox / 2, disc.y - ls.h / 2 + lnudge, lbox, ls.h + 8),
+    GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 
   char num[12];
   int secs = (int)(b->epochBase + D->delta[0]) - (int)now;
