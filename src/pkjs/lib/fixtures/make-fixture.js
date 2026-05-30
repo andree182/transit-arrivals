@@ -18,4 +18,12 @@ function build() {
   var msg = lenDelim(2, entity);                                   // FeedMessage.entity
   return Uint8Array.from(msg);
 }
-module.exports = { build };
+
+// One FeedMessage with one trip: route_id and stops = [[stopId, time], ...].
+// The stops appear in sequence order, so the last one is the trip's terminal.
+function buildTrip(route, stops) {
+  var tu = lenDelim(1, str(5, route));
+  stops.forEach(function (s) { tu = tu.concat(lenDelim(2, stopTimeUpdate(s[0], s[1]))); });
+  return Uint8Array.from(lenDelim(2, lenDelim(3, tu)));
+}
+module.exports = { build: build, buildTrip: buildTrip };

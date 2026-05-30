@@ -24,11 +24,19 @@ var COLORS = {
   'N':[252,204,10],'Q':[252,204,10],'R':[252,204,10],'W':[252,204,10],
   'L':[167,169,172],'S':[128,129,131],'SIR':[0,57,166]
 };
+// The "S" bullet covers three shuttles in two feeds: the 42 St Shuttle rides in
+// the base feed (its station's primary group), while the Franklin Av and
+// Rockaway Park shuttles ride in the ace feed. Pull both for any S station so
+// every shuttle resolves regardless of which one the station belongs to.
+var EXTRA_GROUPS = { 'S': ['ace'] };
 function feedForLine(line) { return LINE_GROUP[line] || null; }
 function colorForLine(line) { return COLORS[line] || [255,255,255]; }
 function feedUrls(lines) {
   var groups = {};
-  lines.forEach(function (l) { var g = feedForLine(l); if (g) groups[g] = true; });
+  lines.forEach(function (l) {
+    var g = feedForLine(l); if (g) groups[g] = true;
+    var ex = EXTRA_GROUPS[l]; if (ex) ex.forEach(function (e) { groups[e] = true; });
+  });
   return Object.keys(groups).map(function (g) { return BASE + GROUPS[g]; });
 }
 module.exports = { feedForLine: feedForLine, colorForLine: colorForLine, feedUrls: feedUrls, _groups: GROUPS };

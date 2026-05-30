@@ -24,3 +24,30 @@ test('drops arrivals already in the past (time < now)', () => {
   const out = buildArrivals([{ route: 'N', stop: 'R01N', time: 500 }], 'R01', 900);
   assert.strictEqual(out.length, 0);
 });
+
+test('normalizes the Franklin shuttle to the S bullet, keeping its headsign', () => {
+  const out = buildArrivals([{ route: 'FS', stop: 'S01N', time: 1000 }], 'S01', 900);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].line, 'S');                         // gray "S" bullet, not "FS"
+  assert.strictEqual(out[0].directions[0].dest, 'Franklin Av'); // raw id keeps the headsign
+});
+
+test('normalizes the SI feed route to the SIR roundel', () => {
+  const out = buildArrivals([{ route: 'SI', stop: 'S31N', time: 1000 }], 'S31', 900);
+  assert.strictEqual(out[0].line, 'SIR');
+  assert.strictEqual(out[0].directions[0].dest, 'St George');
+});
+
+test('headsign follows the soonest train\'s real terminal', () => {
+  const rows = [
+    { route: 'A', stop: 'A30S', time: 2000, dest: 'H11' }, // later: Far Rockaway (the static default)
+    { route: 'A', stop: 'A30S', time: 1000, dest: 'A65' }  // sooner: Lefferts
+  ];
+  const out = buildArrivals(rows, 'A30', 900);
+  assert.strictEqual(out[0].directions[0].dest, 'Ozone Park-Lefferts Blvd'); // A65, the next train, not the static default
+});
+
+test('falls back to the static terminal when the trip carries no dest', () => {
+  const out = buildArrivals([{ route: 'A', stop: 'A30S', time: 1000 }], 'A30', 900);
+  assert.strictEqual(out[0].directions[0].dest, 'Far Rockaway-Mott Av'); // TERMINALS['AS']
+});

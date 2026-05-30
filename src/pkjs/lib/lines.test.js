@@ -14,6 +14,13 @@ test('feedUrls dedupes a station spanning multiple groups', () => {
   assert.strictEqual(urls.length, 2);
 });
 
+test('an S station pulls both the base feed and the ace feed', () => {
+  const urls = feedUrls(['S']); // 42 St shuttle (base) + Franklin/Rockaway (ace)
+  assert.strictEqual(urls.length, 2);
+  assert.ok(urls.some(u => /gtfs-ace$/.test(u)));
+  assert.ok(urls.some(u => /nyct%2Fgtfs$/.test(u)));
+});
+
 test('colorForLine returns an [r,g,b] triple', () => {
   const c = colorForLine('N'); // yellow
   assert.deepStrictEqual(c, [252, 204, 10]);

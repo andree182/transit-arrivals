@@ -1,7 +1,14 @@
 var pbf = require('./pbf');
 function utf8(buf, s, e) { var out = ''; for (var i = s; i < e; i++) out += String.fromCharCode(buf[i]); return decodeURIComponent(escape(out)); }
+function stationOf(stopId) {
+  var c = stopId.charAt(stopId.length - 1);
+  return (c === 'N' || c === 'S') ? stopId.slice(0, -1) : stopId;
+}
 
-// Returns [{ route, stop, time }] across all trip_updates in the FeedMessage.
+// Returns [{ route, stop, time, dest }] across all trip_updates in the
+// FeedMessage. dest is the trip's terminal station (its last stop, suffix
+// stripped) — GTFS-RT lists only the remaining stops in sequence, so the final
+// one is where the train actually ends up.
 function extractStopTimes(buf) {
   var rows = [];
   pbf.readFields(buf, 0, buf.length).forEach(function (entityF) {
@@ -28,7 +35,8 @@ function extractStopTimes(buf) {
           if (stop) stus.push({ stop: stop, time: time });
         }
       });
-      stus.forEach(function (s) { rows.push({ route: route, stop: s.stop, time: s.time }); });
+      var dest = stus.length ? stationOf(stus[stus.length - 1].stop) : null;
+      stus.forEach(function (s) { rows.push({ route: route, stop: s.stop, time: s.time, dest: dest }); });
     });
   });
   return rows;
