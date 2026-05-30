@@ -583,6 +583,9 @@ static void flip_dir(ClickRecognizerRef r, void *c) {
 static void open_alerts_from_hero(ClickRecognizerRef r, void *c) {
   if (has_alerts()) open_alerts();
 }
+static void hero_back(ClickRecognizerRef r, void *c) {
+  window_stack_pop_all(true);   // tap BACK exits the app, as normal
+}
 static void click_config(void *ctx) {
   window_single_click_subscribe(BUTTON_ID_UP, prev_line);
   window_single_click_subscribe(BUTTON_ID_DOWN, next_line);
@@ -590,7 +593,11 @@ static void click_config(void *ctx) {
   window_long_click_subscribe(BUTTON_ID_SELECT, 0, open_settings, NULL);
   window_long_click_subscribe(BUTTON_ID_UP, 0, ring_prev, NULL);
   window_long_click_subscribe(BUTTON_ID_DOWN, 0, ring_next, NULL);
-  window_long_click_subscribe(BUTTON_ID_BACK, 0, open_alerts_from_hero, NULL);  // tap BACK still exits
+  // A long-click subscription alone does NOT suppress the firmware's default
+  // back-out, so BACK must be claimed with a single-click handler too; that
+  // handler does the normal exit while the long-press opens alerts.
+  window_single_click_subscribe(BUTTON_ID_BACK, hero_back);
+  window_long_click_subscribe(BUTTON_ID_BACK, 0, open_alerts_from_hero, NULL);
 }
 
 static void inbox_received(DictionaryIterator *iter, void *ctx) {
