@@ -26,6 +26,7 @@ function getStation(id) {
 }
 
 function displayName(station) {
+  if (station.sys === 'path') return station.name + ' · PATH';
   var lines = (station.lines && station.lines.length)
     ? ' (' + station.lines.join('') + ')'
     : '';

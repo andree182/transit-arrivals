@@ -24,3 +24,40 @@ test('displayName joins multiple lines without separators', () => {
 test('displayName omits parens when no lines', () => {
   assert.strictEqual(displayName({ name: 'Nowhere', lines: [] }), 'Nowhere');
 });
+
+test('a standalone PATH station is in the DB, findable, and tagged', () => {
+  const hoboken = getStation('26730');
+  assert.ok(hoboken, 'Hoboken PATH station present');
+  assert.strictEqual(hoboken.name, 'Hoboken');
+  assert.deepStrictEqual(hoboken.lines, ['JH', 'H3', 'HW']);
+  assert.strictEqual(hoboken.sys, 'path');
+});
+
+test('nearestStation can return a standalone PATH station when closest', () => {
+  const s = nearestStation(40.72699, -74.03383);   // over Newport PATH
+  assert.strictEqual(s.id, '26732');
+});
+
+test('displayName tags a pure PATH station but not a merged subway one', () => {
+  assert.strictEqual(displayName(getStation('26733')), 'Newark · PATH');
+  const u14 = getStation('132');                    // 14 St, merged with PATH
+  assert.ok(displayName(u14).indexOf('· PATH') < 0);
+});
+
+test('a co-located PATH platform merges into the subway entry', () => {
+  const u14 = getStation('132');                    // 14 St [1/2/3/F/M/L]
+  assert.deepStrictEqual(u14.pathIds, ['26722']);
+  ['JH', 'W3', 'H3', 'JS'].forEach((l) =>
+    assert.ok(u14.lines.indexOf(l) >= 0, 'has PATH label ' + l));
+  assert.ok(u14.lines.indexOf('1') >= 0, 'still has subway lines');
+});
+
+test('World Trade Center PATH attaches to BOTH subway complexes', () => {
+  assert.deepStrictEqual(getStation('138').pathIds, ['26734']); // WTC Cortlandt [1]
+  assert.deepStrictEqual(getStation('228').pathIds, ['26734']); // Park Place [2/3/A/C/E/R/W]
+});
+
+test('a merged PATH platform is not also a standalone pin', () => {
+  const all = require('./stations.data.json');
+  assert.strictEqual(all.filter((s) => s.id === '26722').length, 0);
+});

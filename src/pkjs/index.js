@@ -41,7 +41,8 @@ function refreshFor(station) {
     // All trip feeds failed AND nothing is suspended: report offline.
     if (urls.length && failedFeeds === urls.length && !suspensions.length) return sendError(3);
     var now = nowSecs();
-    var model = arrivalsLib.buildArrivals(rows, station.ids || [station.id], now);
+    var ids = (station.ids || [station.id]).concat(station.pathIds || []);
+    var model = arrivalsLib.buildArrivals(rows, ids, now);
     // A suspended line with no trains here becomes a synthetic banner line.
     suspensions.forEach(function (s) {
       var running = model.some(function (m) { return m.line === s.code; });
