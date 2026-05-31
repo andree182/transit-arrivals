@@ -22,6 +22,7 @@ static uint8_t darken8(uint8_t px, float f) {
 }
 
 bool flip_cell_init(FlipCell *c, GRect rect) {
+  memset(c, 0, sizeof(*c));   // so flip_cell_free is safe if a malloc below fails
   c->rect = rect;
   c->w    = rect.size.w;
   c->half = rect.size.h / 2;

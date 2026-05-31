@@ -757,8 +757,11 @@ static void window_load(Window *w) {
   window_set_click_config_provider(s_window, click_config);
   s_warn_path = gpath_create(&WARN_TRI);
 }
-static void window_unload(Window *w) { gpath_destroy(s_warn_path); transition_deinit(); layer_destroy(s_canvas); }
 static AppTimer *s_flip_timer = NULL;
+static void window_unload(Window *w) {
+  if (s_flip_timer) { app_timer_cancel(s_flip_timer); s_flip_timer = NULL; }
+  gpath_destroy(s_warn_path); transition_deinit(); layer_destroy(s_canvas); s_canvas = NULL;
+}
 
 static void flip_step(void *ctx) {
   s_flip_timer = NULL;
