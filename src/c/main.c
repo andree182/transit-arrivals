@@ -4,6 +4,7 @@
 #include "states.h"
 #include "favorites.h"
 #include "favsync.h"
+#include "transition.h"
 
 #define PERSIST_BUNDLE 1
 #define PERSIST_SEL    5
@@ -53,6 +54,8 @@ static int       s_marq_max = 0;     // how far the subtitle overflows the cell
 static int       s_manage_w = 144;   // manage menu width, for overflow math
 static AppTimer *s_marq_timer = NULL;
 
+static void flip_step(void *ctx);
+static void flip_start(void);
 static void render_dispatch(void);
 static void open_settings(ClickRecognizerRef r, void *c);
 static void open_manage(void);
@@ -580,11 +583,25 @@ static void clamp_view(void) {
 
 static void next_line(ClickRecognizerRef r, void *c) {
   if (!s_have_bundle || s_bundle.nLines == 0) return;
-  s_line = (s_line + 1) % s_bundle.nLines; s_dir = 0; persist_view(); render_dispatch();
+  if (transition_active()) return;
+  uint8_t to = (s_line + 1) % s_bundle.nLines;
+  if (transition_begin_line(s_line, s_dir, to, 0)) {
+    if (s_canvas) layer_mark_dirty(s_canvas);
+    flip_start();
+  } else {
+    s_line = to; s_dir = 0; persist_view(); render_dispatch();
+  }
 }
 static void prev_line(ClickRecognizerRef r, void *c) {
   if (!s_have_bundle || s_bundle.nLines == 0) return;
-  s_line = (s_line + s_bundle.nLines - 1) % s_bundle.nLines; s_dir = 0; persist_view(); render_dispatch();
+  if (transition_active()) return;
+  uint8_t to = (s_line + s_bundle.nLines - 1) % s_bundle.nLines;
+  if (transition_begin_line(s_line, s_dir, to, 0)) {
+    if (s_canvas) layer_mark_dirty(s_canvas);
+    flip_start();
+  } else {
+    s_line = to; s_dir = 0; persist_view(); render_dispatch();
+  }
 }
 static void flip_dir(ClickRecognizerRef r, void *c) {
   if (!s_have_bundle) return;
@@ -681,6 +698,10 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, b, 0, GCornerNone);
 
+  if (transition_active()) {
+    if (transition_render(ctx, b, &s_bundle, time(NULL))) return;
+  }
+
   if (s_switching) {
     states_draw_message(ctx, b, s_hint, ring_is_nearest(s_sel) ? "Locating…" : "Loading…");
     return;
@@ -732,13 +753,38 @@ static void window_load(Window *w) {
   s_canvas = layer_create(b);
   layer_set_update_proc(s_canvas, canvas_update);
   layer_add_child(root, s_canvas);
+  transition_init(b);
   window_set_click_config_provider(s_window, click_config);
   s_warn_path = gpath_create(&WARN_TRI);
 }
-static void window_unload(Window *w) { gpath_destroy(s_warn_path); layer_destroy(s_canvas); }
+static void window_unload(Window *w) { gpath_destroy(s_warn_path); transition_deinit(); layer_destroy(s_canvas); }
+static AppTimer *s_flip_timer = NULL;
+
+static void flip_step(void *ctx) {
+  s_flip_timer = NULL;
+  bool more = transition_step();
+  if (s_canvas) layer_mark_dirty(s_canvas);
+  if (more) {
+    s_flip_timer = app_timer_register(33, flip_step, NULL);
+  } else {
+    uint8_t l, d;
+    transition_target(&l, &d);
+    s_line = l; s_dir = d;
+    persist_view();
+  }
+}
+
+static void flip_start(void) {
+  if (s_flip_timer) app_timer_cancel(s_flip_timer);
+  s_flip_timer = app_timer_register(33, flip_step, NULL);
+}
+
 static void render_dispatch(void) { if (s_canvas) layer_mark_dirty(s_canvas); }
 
-static void tick_handler(struct tm *t, TimeUnits u) { render_dispatch(); }
+static void tick_handler(struct tm *t, TimeUnits u) {
+  if (transition_active()) return;       // step timer owns redraws mid-flip
+  render_dispatch();
+}
 static void poll_cb(void *ctx) { request_refresh(); s_poll = app_timer_register(30000, poll_cb, NULL); }
 
 // AppGlance: on exit, show the soonest upcoming train for the last-viewed
