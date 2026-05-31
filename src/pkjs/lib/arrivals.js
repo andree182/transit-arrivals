@@ -32,6 +32,21 @@ function displayRoute(route) {
   return route;
 }
 
+// Official MTA service order (the sequence riders read on the system map and in
+// every station): numbered IRT lines, then the lettered trunks grouped by color
+// (A/C/E blue, B/D/F/M orange, …), then G, the Brooklyn lines, shuttles, SIR,
+// and finally the PATH bullets. Lines flip through this order on UP/DOWN, so the
+// order is wayfinding — not the accident of an alphabetical key sort.
+var SERVICE_ORDER = [
+  '1', '2', '3', '4', '5', '6', '7',
+  'A', 'C', 'E', 'B', 'D', 'F', 'M', 'G', 'J', 'Z', 'L', 'N', 'Q', 'R', 'W', 'S', 'SIR',
+  'NW', 'HW', 'W3', 'JS', 'JH', 'NH', 'H3'
+];
+function serviceRank(route) {
+  var i = SERVICE_ORDER.indexOf(displayRoute(route));
+  return i < 0 ? SERVICE_ORDER.length : i;   // unknown bullets sort to the tail
+}
+
 // rows: [{route,stop,time}], stationId: a parent id or an array of parent ids
 // (a station complex shares one entry but spans several GTFS parent stations),
 // now: epoch secs.
@@ -54,7 +69,10 @@ function buildArrivals(rows, stationId, now) {
     var L = byLine[key] || (byLine[key] = {});
     (L[dir] || (L[dir] = [])).push({ time: r.time, dest: r.dest, exp: exp });
   });
-  return Object.keys(byLine).sort().map(function (key) {
+  return Object.keys(byLine).sort(function (a, b) {
+    var ra = serviceRank(a), rb = serviceRank(b);
+    return ra !== rb ? ra - rb : (a < b ? -1 : a > b ? 1 : 0);
+  }).map(function (key) {
     var dirs = Object.keys(byLine[key]).sort().map(function (dir) {
       var arr = byLine[key][dir].sort(function (a, b) { return a.time - b.time; });
       // Headsign tracks the soonest train's real terminal (from the feed); the

@@ -5,12 +5,16 @@
 #include "favorites.h"
 #include "favsync.h"
 #include "transition.h"
+#include "loading.h"
+#include "arrival.h"
 
 #define PERSIST_BUNDLE 1
 #define PERSIST_SEL    5
 #define PERSIST_NEAREST_POS 6
 #define PERSIST_SEEN_HELP   7
 #define PERSIST_VIEW        8   // packed (s_line << 8 | s_dir): last line+direction shown
+
+#define STALE_SECS 120   // data older than this is no longer trustworthy as "live"
 
 // Upward warning triangle for the hero alert badge (16x14).
 static const GPathInfo WARN_TRI = { 3, (GPoint[]){ {8, 0}, {16, 14}, {0, 14} } };
@@ -22,6 +26,12 @@ static Bundle s_bundle;
 static bool s_have_bundle = false;
 static int s_error = -1;        // -1 none; 0 ready; 1 no-loc; 2 bad-station; 3 offline; 4 no-trains
 static uint8_t s_line = 0, s_dir = 0;
+// Per-line direction memory: each line remembers the direction you last viewed it
+// in, so scrolling away and back restores that line's own choice (line A stays
+// Brooklyn, line B stays Manhattan) instead of carrying one direction across all
+// lines. Indexed by line index in the current bundle; reset when the station
+// changes. Kept in sync with s_dir whenever the user flips the current line.
+static uint8_t s_line_dir[MAX_LINES] = {0};
 static uint8_t s_sel = 0;       // ring index: 0..ring_len()-1
 static uint8_t s_nearest_pos = 0; // 0..favorites_count() = Nearest slot position
 static bool s_switching = false;// true between a ring switch and the next bundle
@@ -56,11 +66,17 @@ static AppTimer *s_marq_timer = NULL;
 
 static void flip_step(void *ctx);
 static void flip_start(void);
+static void flip_stop(void);
+static void load_start(void);
+static void load_stop(void);
 static void render_dispatch(void);
 static void open_settings(ClickRecognizerRef r, void *c);
 static void open_manage(void);
 static void open_alerts(void);
 static void push_favsync(void);
+#ifdef MTA_DEBUG_STUB
+static void stub_arrive(void *ctx);
+#endif
 
 // Service-alerts screen.
 static Window     *s_alerts_win;
@@ -166,7 +182,13 @@ static void tx_pump(void) {
   }
 }
 
-static void request_refresh(void) { s_tx_refresh = true; tx_pump(); }
+static void request_refresh(void) {
+#ifdef MTA_DEBUG_STUB
+  app_timer_register(1500, stub_arrive, NULL);   // emulate the phone's feed reply
+  return;
+#endif
+  s_tx_refresh = true; tx_pump();
+}
 static void push_favsync(void) { s_tx_favsync = true; tx_pump(); }
 
 static void outbox_sent(DictionaryIterator *it, void *ctx) { s_tx_busy = false; tx_pump(); }
@@ -549,10 +571,12 @@ static void open_settings(ClickRecognizerRef r, void *c) {
 }
 
 static void switch_to(uint8_t sel) {
+  arrival_cancel();   // a station scroll takes over from any in-flight gold wipe
   uint8_t rl = ring_len();
   if (rl == 0) return;
   s_sel = sel % rl;
   s_line = 0; s_dir = 0;
+  memset(s_line_dir, 0, sizeof(s_line_dir));  // new station: per-line directions reset
   s_alerts[0] = '\0';   // old station's alerts no longer apply
   if (ring_is_nearest(s_sel)) snprintf(s_hint, sizeof(s_hint), "Nearest");
   else {
@@ -572,6 +596,7 @@ static void ring_prev(ClickRecognizerRef r, void *c) {
 }
 
 static void persist_view(void) {
+  if (s_line < MAX_LINES) s_line_dir[s_line] = s_dir;  // remember this line's direction
   persist_write_int(PERSIST_VIEW, ((int)s_line << 8) | s_dir);
 }
 static void clamp_view(void) {
@@ -581,32 +606,105 @@ static void clamp_view(void) {
   if (nd == 0 || s_dir >= nd) s_dir = 0;
 }
 
+// Switching lines restores that line's own last-viewed direction, falling back
+// to dir 0 when it was never set or the line has fewer directions (e.g. a one-way
+// shuttle).
+static uint8_t keep_dir(uint8_t to) {
+  uint8_t nd = s_bundle.lines[to].nDirs;
+  uint8_t d = s_line_dir[to];
+  return (nd && d < nd) ? d : 0;
+}
+// Mid-flip, snap to the in-flight target so the next press flips on from there.
+static void snap_active_transition(void) {
+  if (!transition_active()) return;
+  uint8_t l, d; transition_target(&l, &d);
+  s_line = l; s_dir = d;
+}
+// Mid-load, a line/dir press re-targets the interstitial riffle instead of
+// starting a flip the loading screen would hide. The fresh cells re-settle onto
+// the new line.
+static bool retarget_loading(uint8_t to_line, uint8_t to_dir) {
+  if (!loading_active()) return false;
+  s_line = to_line; s_dir = to_dir;
+  persist_view();
+  loading_land(&s_bundle, s_line, s_dir, time(NULL));
+  if (s_canvas) layer_mark_dirty(s_canvas);
+  return true;
+}
+// Fast mode: when the user out-presses the flip animation, they're in a rush —
+// stop animating and snap straight to the new view. The trigger is "a press
+// arrived while a flip was still playing" (you're faster than the animation).
+// Once tripped it sticks for FAST_DECAY_MS, re-armed on every fast press, so a
+// burst of taps all settle instantly; a pause lets it lapse and the next press
+// animates again. Uses an app_timer (reliable) rather than a wall clock.
+#define FAST_DECAY_MS 600
+static bool s_fast = false;
+static AppTimer *s_fast_timer = NULL;
+
+static void fast_expire(void *ctx) { s_fast_timer = NULL; s_fast = false; }
+static void fast_arm(void) {
+  s_fast = true;
+  if (s_fast_timer) app_timer_cancel(s_fast_timer);
+  s_fast_timer = app_timer_register(FAST_DECAY_MS, fast_expire, NULL);
+}
+// Drop any in-flight flip and cut straight to (line,dir) with no animation.
+static void commit_view_instant(uint8_t to_line, uint8_t to_dir) {
+  flip_stop();
+  transition_abort();
+  s_line = to_line; s_dir = to_dir;
+  persist_view();
+  render_dispatch();
+}
 static void next_line(ClickRecognizerRef r, void *c) {
   if (!s_have_bundle || s_bundle.nLines == 0) return;
-  if (transition_active()) return;
+  arrival_cancel();   // scrolling lines interrupts the gold wipe
+  bool outpaced = s_fast || transition_active();   // pressed faster than the flip
+  snap_active_transition();
   uint8_t to = (s_line + 1) % s_bundle.nLines;
-  if (transition_begin_line(s_line, s_dir, to, 0)) {
+  uint8_t td = keep_dir(to);
+  if (retarget_loading(to, td)) return;
+  if (outpaced) { fast_arm(); commit_view_instant(to, td); return; }
+  if (transition_begin_line(s_line, s_dir, to, td)) {
     if (s_canvas) layer_mark_dirty(s_canvas);
     flip_start();
   } else {
-    s_line = to; s_dir = 0; persist_view(); render_dispatch();
+    s_line = to; s_dir = td; persist_view(); render_dispatch();
   }
 }
 static void prev_line(ClickRecognizerRef r, void *c) {
   if (!s_have_bundle || s_bundle.nLines == 0) return;
-  if (transition_active()) return;
+  arrival_cancel();   // scrolling lines interrupts the gold wipe
+  bool outpaced = s_fast || transition_active();
+  snap_active_transition();
   uint8_t to = (s_line + s_bundle.nLines - 1) % s_bundle.nLines;
-  if (transition_begin_line(s_line, s_dir, to, 0)) {
+  uint8_t td = keep_dir(to);
+  if (retarget_loading(to, td)) return;
+  if (outpaced) { fast_arm(); commit_view_instant(to, td); return; }
+  if (transition_begin_line(s_line, s_dir, to, td)) {
     if (s_canvas) layer_mark_dirty(s_canvas);
     flip_start();
   } else {
-    s_line = to; s_dir = 0; persist_view(); render_dispatch();
+    s_line = to; s_dir = td; persist_view(); render_dispatch();
   }
 }
 static void flip_dir(ClickRecognizerRef r, void *c) {
   if (!s_have_bundle) return;
-  uint8_t nd = s_bundle.lines[s_line].nDirs; if (nd == 0) return;
-  s_dir = (s_dir + 1) % nd; persist_view(); render_dispatch();
+  arrival_cancel();   // flipping direction interrupts the gold wipe
+  bool outpaced = s_fast || transition_active();
+  snap_active_transition();   // adopt any in-flight target so we toggle on from it
+  uint8_t nd = s_bundle.lines[s_line].nDirs; if (nd <= 1) {
+    if (nd == 1 && s_dir != 0) { commit_view_instant(s_line, 0); }
+    return;
+  }
+  uint8_t to = (s_dir + 1) % nd;
+  if (retarget_loading(s_line, to)) return;
+  if (outpaced) { fast_arm(); commit_view_instant(s_line, to); return; }
+  if (transition_begin_dir(s_line, s_dir, to)) {
+    if (s_canvas) layer_mark_dirty(s_canvas);
+    flip_start();
+  } else {
+    s_dir = to; persist_view(); render_dispatch();
+  }
 }
 static void open_alerts_from_hero(ClickRecognizerRef r, void *c) {
   if (has_alerts()) open_alerts();
@@ -628,7 +726,17 @@ static void click_config(void *ctx) {
   window_multi_click_subscribe(BUTTON_ID_BACK, 2, 2, 0, true, open_alerts_from_hero);
 }
 
+// Hand the loading interstitial the real values for the freshly-arrived bundle
+// so its riffle settles onto the line the user will land on (s_line/s_dir).
+static void loading_land_current(void) {
+  if (!loading_active() || loading_landing()) return;
+  loading_land(&s_bundle, s_line, s_dir, time(NULL));
+}
+
 static void inbox_received(DictionaryIterator *iter, void *ctx) {
+#ifdef MTA_DEBUG_STUB
+  (void)iter; (void)ctx; return;   // keep the synthetic bundle; ignore the live feed
+#endif
   Tuple *alerts = dict_find(iter, MESSAGE_KEY_Alerts);
   if (alerts) {
     if (alerts->type == TUPLE_CSTRING && alerts->length > 1) {
@@ -667,22 +775,29 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
     if (s_have_bundle) { strncpy(prev_id, s_bundle.id, sizeof(prev_id) - 1); prev_id[sizeof(prev_id) - 1] = '\0'; }
     if (bundle_decode(bun->value->data, bun->length, &s_bundle)) {
       s_have_bundle = true; s_error = -1;
-      if (strcmp(prev_id, s_bundle.id) != 0) { s_line = 0; s_dir = 0; }  // new station: start at the top
-      else clamp_view();                                                 // same station refresh: keep the user's view
+      if (strcmp(prev_id, s_bundle.id) != 0) {
+        s_line = 0; s_dir = 0;                            // new station: start at the top
+        memset(s_line_dir, 0, sizeof(s_line_dir));        // and forget the old station's per-line directions
+      } else clamp_view();                                // same station refresh: keep the user's view
       s_switching = false;
       persist_write_data(PERSIST_BUNDLE, bun->value->data, bun->length);
       persist_view();
       int fi = favorites_index_of(s_bundle.id);
       if (fi >= 0) favorites_update_name((uint8_t)fi, s_bundle.station);
+      loading_land_current();          // settle the interstitial onto real data
     }
   } else if (err) {
     int code = (int)err->value->uint8;
     if (code == 0) { push_favsync(); request_refresh(); }
-    else { s_error = code; s_switching = false; }
+    else {
+      s_error = code; s_switching = false;
+      if (loading_active() && !loading_landing()) { loading_deinit(); load_stop(); }
+    }
   }
   render_dispatch();
 }
 
+#ifndef MTA_DEBUG_STUB
 static void load_cached_bundle(void) {
   if (!persist_exists(PERSIST_BUNDLE)) return;
   int sz = persist_get_size(PERSIST_BUNDLE);
@@ -692,6 +807,56 @@ static void load_cached_bundle(void) {
   if (bundle_decode(buf, sz, &s_bundle)) s_have_bundle = true;
   free(buf);
 }
+#endif
+
+#ifdef MTA_DEBUG_STUB
+// Synthetic bundle so the hero renders in the emulator, which has no live MTA
+// feed. Lets us screenshot and tune the flip/zip without hardware. Compiled in
+// only when MTA_DEBUG_STUB is defined (never in a release build).
+static void load_stub_bundle(void) {
+  Bundle *B = &s_bundle;
+  memset(B, 0, sizeof(*B));
+  B->version = 5;
+  B->epochBase = (uint32_t)time(NULL);
+  strncpy(B->station, "Times Sq-42 St", sizeof(B->station) - 1);
+  strncpy(B->id, "127", sizeof(B->id) - 1);
+  struct { const char *label; uint8_t r, g, b; const char *n; const char *s;
+           uint16_t d0, d1; } rows[] = {
+    { "1", 238, 53, 46, "Van Cortlandt Park", "South Ferry", 90, 540 },
+    { "2", 238, 53, 46, "Wakefield-241 St", "Flatbush Av", 240, 720 },
+    { "7", 185, 51, 173, "Flushing-Main St", "34 St-Hudson Yds", 60, 300 },
+    { "A", 0, 57, 166, "Inwood-207 St", "Far Rockaway", 720, 1320 },
+    { "N", 252, 204, 10, "Astoria-Ditmars", "Coney Island", 180, 600 },
+    { "Q", 252, 204, 10, "96 St-2 Av", "Coney Island", 1080, 1680 },
+  };
+  B->nLines = sizeof(rows) / sizeof(rows[0]);
+  if (B->nLines > MAX_LINES) B->nLines = MAX_LINES;
+  for (uint8_t i = 0; i < B->nLines; i++) {
+    LineView *L = &B->lines[i];
+    strncpy(L->label, rows[i].label, sizeof(L->label) - 1);
+    L->r = rows[i].r; L->g = rows[i].g; L->b = rows[i].b;
+    L->nDirs = 2;
+    DirView *N = &L->dirs[0];
+    strncpy(N->dest, rows[i].n, sizeof(N->dest) - 1);
+    N->dir = 0; N->n = 3; N->delta[0] = rows[i].d0; N->delta[1] = rows[i].d0 + 360; N->delta[2] = rows[i].d0 + 900;
+    DirView *S = &L->dirs[1];
+    strncpy(S->dest, rows[i].s, sizeof(S->dest) - 1);
+    S->dir = 1; S->n = 3; S->delta[0] = rows[i].d1; S->delta[1] = rows[i].d1 + 420; S->delta[2] = rows[i].d1 + 1020;
+  }
+  s_have_bundle = true;
+}
+
+// Emulator stand-in for the phone's feed reply: fills the synthetic bundle and
+// lands the loading interstitial so the full riffle->settle can be exercised.
+static void stub_arrive(void *ctx) {
+  (void)ctx;
+  load_stub_bundle();
+  s_switching = false; s_error = -1;
+  if (s_line >= s_bundle.nLines) { s_line = 0; s_dir = 0; }
+  loading_land_current();
+  render_dispatch();
+}
+#endif
 
 static void canvas_update(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
@@ -702,18 +867,28 @@ static void canvas_update(Layer *layer, GContext *ctx) {
     if (transition_render(ctx, b, &s_bundle, time(NULL))) return;
   }
 
-  if (s_switching) {
-    states_draw_message(ctx, b, s_hint, ring_is_nearest(s_sel) ? "Locating…" : "Loading…");
-    return;
-  }
-
   if (s_error == 1) { states_draw_message(ctx, b, "Location off", "Open settings to pick a station"); return; }
   if (s_error == 2) { states_draw_message(ctx, b, "No station", "Couldn't find a station here"); return; }
   if (s_error == 4) { states_draw_message(ctx, b, "No trains", "Nothing scheduled right now"); return; }
   if (s_error == 3 && !s_have_bundle) { states_draw_message(ctx, b, "Offline", "Can't reach phone"); return; }
-  if (!s_have_bundle) { states_draw_message(ctx, b, "Loading", "Finding your station..."); return; }
+
+  // Departure-board loading interstitial: a ring switch in flight, or a cold
+  // start with no data yet. Once the bundle lands the riffle keeps settling
+  // (loading_active stays true) until every cell has reached its real value.
+  if (s_switching || !s_have_bundle || loading_active()) {
+#if defined(PBL_COLOR)
+    loading_begin(b, ring_is_nearest(s_sel));
+    load_start();
+    loading_render(ctx, b, time(NULL));
+#else  // no Solari interstitial on b/w: a plain status message
+    states_draw_message(ctx, b, ring_is_nearest(s_sel) ? "Locating" : "Loading",
+                        s_have_bundle ? "Updating arrivals" : "Getting trains");
+#endif
+    return;
+  }
 
   hero_draw(ctx, b, &s_bundle, s_line, s_dir, time(NULL));
+  arrival_render(ctx, b, &s_bundle, s_line, s_dir, time(NULL));  // gold wipe over the just-drawn board
 
   // Ring position, e.g. "2/4". Shown only when the ring has more than one slot.
   if (ring_len() > 1) {
@@ -741,10 +916,16 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   }
 
   // Offline with cached data: keep showing arrivals, badge them stale if old.
-  if (s_error == 3 && (int)(time(NULL)) - (int)s_bundle.epochBase > 120) {
+  if (s_error == 3 && (int)(time(NULL)) - (int)s_bundle.epochBase > STALE_SECS) {
     graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorYellow, GColorWhite));
     graphics_draw_text(ctx, "STALE", fonts_get_system_font(FONT_KEY_GOTHIC_14),
       GRect(0, 2, b.size.w - 4, 16), GTextOverflowModeFill, GTextAlignmentRight, NULL);
+  }
+
+  // Stale data: ghost the whole board (and its chrome) to grey so a no-longer-live
+  // countdown can't be mistaken for current. Last, so everything drained uniformly.
+  if ((int)(time(NULL) - (time_t)s_bundle.epochBase) > STALE_SECS) {
+    hero_ghost_board(ctx, b);
   }
 }
 static void window_load(Window *w) {
@@ -758,8 +939,12 @@ static void window_load(Window *w) {
   s_warn_path = gpath_create(&WARN_TRI);
 }
 static AppTimer *s_flip_timer = NULL;
+static AppTimer *s_arrival_timer = NULL;
 static void window_unload(Window *w) {
   if (s_flip_timer) { app_timer_cancel(s_flip_timer); s_flip_timer = NULL; }
+  if (s_arrival_timer) { app_timer_cancel(s_arrival_timer); s_arrival_timer = NULL; }
+  if (s_fast_timer) { app_timer_cancel(s_fast_timer); s_fast_timer = NULL; }
+  load_stop(); loading_deinit();
   gpath_destroy(s_warn_path); transition_deinit(); layer_destroy(s_canvas); s_canvas = NULL;
 }
 
@@ -782,10 +967,83 @@ static void flip_start(void) {
   s_flip_timer = app_timer_register(33, flip_step, NULL);
 }
 
+static void flip_stop(void) {
+  if (s_flip_timer) { app_timer_cancel(s_flip_timer); s_flip_timer = NULL; }
+}
+
+// Loading interstitial timer: drives the riffle while waiting on data and the
+// settle once it lands. Stops itself when loading_step reports done.
+// Arrival flourish timer: drives the gold station-footer wipe after the load
+// settles. The haptic pulse fires once in arrival_begin.
+static void arrival_step_cb(void *ctx) {
+  s_arrival_timer = NULL;
+  bool more = arrival_step();
+  if (s_canvas) layer_mark_dirty(s_canvas);
+  if (more) s_arrival_timer = app_timer_register(33, arrival_step_cb, NULL);
+}
+static void arrival_start(bool haptic) {
+  arrival_begin(haptic);
+  if (!s_arrival_timer) s_arrival_timer = app_timer_register(33, arrival_step_cb, NULL);
+}
+
+static AppTimer *s_load_timer = NULL;
+static void load_step(void *ctx) {
+  s_load_timer = NULL;
+  bool was_landing = loading_landing();      // distinguish a real settle from an abort
+  bool more = loading_step();
+  if (s_canvas) layer_mark_dirty(s_canvas);
+  if (more) s_load_timer = app_timer_register(33, load_step, NULL);
+  else if (was_landing) arrival_start(true);     // loading just settled onto the board
+}
+static void load_start(void) {
+  if (!s_load_timer) s_load_timer = app_timer_register(33, load_step, NULL);
+}
+static void load_stop(void) {
+  if (s_load_timer) { app_timer_cancel(s_load_timer); s_load_timer = NULL; }
+}
+
 static void render_dispatch(void) { if (s_canvas) layer_mark_dirty(s_canvas); }
 
+// Seconds until the displayed line/dir's soonest train, plus an identity key for
+// that train (station + line + dir, deliberately NOT the feed time, so the key
+// survives refreshes and a countdown can be tracked across them). Returns false
+// when there's no live arrival to track (suspended line, empty dir).
+static bool view_nearest(int *secs, uint32_t *key) {
+  if (!s_have_bundle || s_line >= s_bundle.nLines) return false;
+  const LineView *L = &s_bundle.lines[s_line];
+  if (L->nDirs == 0 || s_dir >= L->nDirs) return false;
+  const DirView *D = &L->dirs[s_dir];
+  if (D->n == 0) return false;
+  *secs = (int)(s_bundle.epochBase + D->delta[0]) - (int)time(NULL);
+  uint32_t h = 2166136261u;                       // FNV-1a over the station id
+  for (const char *p = s_bundle.id; *p; p++) h = (h ^ (uint8_t)*p) * 16777619u;
+  *key = (h & 0xFFFF0000u) | ((uint32_t)s_line << 8) | s_dir;
+  return true;
+}
+
+// Identity + future-ness of the train we're watching tick down, so we can fire
+// the gold wipe exactly once at the moment its countdown reaches "Now".
+static uint32_t s_now_key = 0xFFFFFFFFu;
+static bool     s_now_future = false;
+
 static void tick_handler(struct tm *t, TimeUnits u) {
-  if (transition_active()) return;       // step timer owns redraws mid-flip
+  int secs; uint32_t key;
+  if (view_nearest(&secs, &key)) {
+    bool is_now = (secs / 60) <= 0;               // matches hero's fmt_count threshold
+    bool stale = (int)(time(NULL) - (time_t)s_bundle.epochBase) > STALE_SECS;
+    // Fire only on a genuine future->Now crossing of the same train, and only
+    // when the hero board is actually on screen and the data is fresh.
+    if (key == s_now_key && s_now_future && is_now && !stale
+        && !loading_active() && !transition_active() && !arrival_active()) {
+      arrival_start(false);                        // wipe only — no buzz
+    }
+    s_now_key = key;
+    s_now_future = !is_now;
+  } else {
+    s_now_key = 0xFFFFFFFFu;
+    s_now_future = false;
+  }
+  if (transition_active()) return;                 // step timer owns redraws mid-flip
   render_dispatch();
 }
 static void poll_cb(void *ctx) { request_refresh(); s_poll = app_timer_register(30000, poll_cb, NULL); }
@@ -837,7 +1095,13 @@ static void init(void) {
   }
   s_sel = persist_exists(PERSIST_SEL) ? (uint8_t)persist_read_int(PERSIST_SEL) : 0;
   clamp_sel();
+#ifdef MTA_DEBUG_STUB
+  // Cold-start into the loading interstitial, then simulate a feed arrival so
+  // the riffle settles — there is no phone to deliver data in the emulator.
+  app_timer_register(1500, stub_arrive, NULL);
+#else
   load_cached_bundle();
+#endif
   if (persist_exists(PERSIST_VIEW)) {
     int v = persist_read_int(PERSIST_VIEW);
     s_line = (uint8_t)((v >> 8) & 0xff);

@@ -7,119 +7,234 @@
 static float fall(float p) {
   return cos_lookup((int32_t)(p * (TRIG_MAX_ANGLE / 4))) / (float)TRIG_MAX_RATIO;
 }
-// Land phase (edge-on 0 -> flat 1): ease-out cubic, then a small damped settle
-// that dips BELOW 1.0 and recovers. Must never exceed 1.0 — a flap can't grow
-// taller than flat, and an overshoot clips the glyph and reads as a snap.
+// Land phase (edge-on 0 -> flat 1): ease-out cubic with a small sub-1.0 settle.
+// Must never exceed 1.0 — an overshoot clips the glyph and reads as a snap.
 static float land(float p) {
   float e = 1.0f - (1.0f - p) * (1.0f - p) * (1.0f - p);
   float dip = (float)sin_lookup((int32_t)(p * (TRIG_MAX_ANGLE / 2))) / (float)TRIG_MAX_RATIO;
   return e - 0.05f * dip * p;
 }
-// Darken a captured GColor8 pixel (bits a:7-6 r:5-4 g:3-2 b:1-0) by factor f.
+// Darken a captured GColor8 pixel (a:7-6 r:5-4 g:3-2 b:1-0) by factor f.
 static uint8_t darken8(uint8_t px, float f) {
   uint8_t a = (px >> 6) & 3, r = (px >> 4) & 3, g = (px >> 2) & 3, b = px & 3;
   return (a << 6) | (((uint8_t)(r * f)) << 4) | (((uint8_t)(g * f)) << 2) | ((uint8_t)(b * f));
 }
 
-bool flip_cell_init(FlipCell *c, GRect rect) {
-  memset(c, 0, sizeof(*c));   // so flip_cell_free is safe if a malloc below fails
-  c->rect = rect;
-  c->w    = rect.size.w;
-  c->half = rect.size.h / 2;
-  size_t n = (size_t)c->w * c->half;
-  c->old_top = malloc(n); c->old_bot = malloc(n);
-  c->new_top = malloc(n); c->new_bot = malloc(n);
-  c->ready = false;
-  if (!c->old_top || !c->old_bot || !c->new_top || !c->new_bot) {
-    flip_cell_free(c);
-    return false;
+static int digit_idx(char c) { return (c >= '0' && c <= '9') ? c - '0' : -1; }
+static int alpha_idx(char c) {
+  if (c >= 'A' && c <= 'Z') return c - 'A';
+  if (c >= 'a' && c <= 'z') return c - 'a';
+  return -1;
+}
+
+// Forward ring walk from old to new: digits cycle 0-9, letters cycle A-Z (in the
+// new char's case). Mixed/punctuation does a single direct fold. Fills seq with
+// old..new inclusive and returns its length (>=1). seq[0]=old, seq[len-1]=new.
+static int ring_walk(char old_c, char new_c, char *seq, int max) {
+  if (old_c == new_c) { seq[0] = new_c; return 1; }
+  int od = digit_idx(old_c), nd = digit_idx(new_c);
+  if (od >= 0 && nd >= 0) {
+    int steps = (nd - od + 10) % 10;
+    if (steps + 1 > max) steps = max - 1;
+    for (int k = 0; k <= steps; k++) seq[k] = '0' + ((od + k) % 10);
+    return steps + 1;
   }
+  int oa = alpha_idx(old_c), na = alpha_idx(new_c);
+  if (oa >= 0 && na >= 0) {
+    char base = (new_c >= 'a' && new_c <= 'z') ? 'a' : 'A';
+    int steps = (na - oa + 26) % 26;
+    if (steps + 1 > max) steps = max - 1;
+    for (int k = 0; k <= steps; k++) seq[k] = base + ((oa + k) % 26);
+    return steps + 1;
+  }
+  seq[0] = old_c; seq[1] = new_c; return 2;       // cross-type: one direct fold
+}
+
+static bool alloc_cell(FlipSlot *s, GRect cell) {
+  if (cell.size.h & 1) cell.size.h++;
+  if (cell.size.w <= 0 || cell.size.h < 2) return false;
+  s->cell = cell;
+  s->w = cell.size.w;
+  s->half = cell.size.h / 2;
+  size_t n = (size_t)s->w * (size_t)(s->half * 2);
+  s->top = malloc(n);
+  s->bot = malloc(n);
+  if (!s->top || !s->bot) { flipslot_free(s); return false; }
+  s->ok = true;
   return true;
 }
 
-void flip_cell_free(FlipCell *c) {
-  free(c->old_top); free(c->old_bot); free(c->new_top); free(c->new_bot);
-  c->old_top = c->old_bot = c->new_top = c->new_bot = NULL;
-  c->ready = false;
+bool flipslot_text(FlipSlot *s, const HeroGlyph *g, char old_ch, int start_ms, int step_ms) {
+  memset(s, 0, sizeof(*s));
+  s->last_k = -1;
+  s->start_ms = start_ms;
+  s->step_ms = step_ms;
+  s->font = g->font; s->fg = g->fg; s->bg = g->bg;
+  s->is_disc = false;
+  int len = ring_walk(old_ch, g->ch, s->seq, FLIP_SEQ_MAX);
+  s->nsteps = len - 1;
+  if (s->nsteps <= 0) return false;               // no change: leave static
+  return alloc_cell(s, g->cell);
 }
 
-void flip_cell_capture(FlipCell *c, GContext *ctx, bool which_new) {
-  GBitmap *fb = graphics_capture_frame_buffer(ctx);
-  uint8_t *d = gbitmap_get_data(fb);
-  int st = gbitmap_get_bytes_per_row(fb);
-  uint8_t *top = which_new ? c->new_top : c->old_top;
-  uint8_t *bot = which_new ? c->new_bot : c->old_bot;
-  for (int r = 0; r < c->half * 2; r++) {
-    int sy = c->rect.origin.y + r;
-    const uint8_t *srow = d + sy * st + c->rect.origin.x;
-    uint8_t *dst = (r < c->half) ? (top + r * c->w)
-                                 : (bot + (r - c->half) * c->w);
-    memcpy(dst, srow, c->w);
-  }
-  graphics_release_frame_buffer(ctx, fb);
+bool flipslot_text_direct(FlipSlot *s, GRect cell, GFont font, GColor fg, GColor bg,
+                          char old_ch, char new_ch, int start_ms, int step_ms) {
+  memset(s, 0, sizeof(*s));
+  s->last_k = -1;
+  s->start_ms = start_ms;
+  s->step_ms = step_ms;
+  s->font = font; s->fg = fg; s->bg = bg;
+  s->is_disc = false;
+  s->seq[0] = old_ch;
+  s->seq[1] = new_ch;
+  s->nsteps = 1;
+  return alloc_cell(s, cell);
 }
 
-static void blit_half(uint8_t *d, int st, GRect rect, int y0,
-                      const uint8_t *src, int w, int rows) {
+bool flipslot_disc_riffle(FlipSlot *s, GRect cell, const Bundle *b,
+                          const uint8_t *lineseq, int nlen, int start_ms, int step_ms) {
+  memset(s, 0, sizeof(*s));
+  s->last_k = -1;
+  s->start_ms = start_ms;
+  s->step_ms = step_ms;
+  s->is_disc = true;
+  s->bundle = b;
+  if (nlen < 2) return false;                     // no change: leave static
+  if (nlen > FLIP_SEQ_MAX) nlen = FLIP_SEQ_MAX;
+  for (int i = 0; i < nlen; i++) s->seq[i] = (char)lineseq[i];
+  s->nsteps = nlen - 1;
+  return alloc_cell(s, cell);
+}
+
+void flipslot_free(FlipSlot *s) {
+  free(s->top); free(s->bot);
+  s->top = s->bot = NULL;
+  s->ok = false;
+}
+
+// Copy the just-drawn cell out of the framebuffer into dst.
+static void capture_cell(FlipSlot *s, GContext *ctx, uint8_t *dst) {
+  GBitmap *bmp = graphics_capture_frame_buffer(ctx);
+  uint8_t *d = gbitmap_get_data(bmp);
+  int st = gbitmap_get_bytes_per_row(bmp);
+  int rows = s->half * 2;
   for (int r = 0; r < rows; r++) {
-    int dy = y0 + r;
-    if (dy < rect.origin.y || dy >= rect.origin.y + rect.size.h) continue;
-    memcpy(d + dy * st + rect.origin.x, src + r * w, w);
+    const uint8_t *srow = d + (s->cell.origin.y + r) * st + s->cell.origin.x;
+    memcpy(dst + (size_t)r * s->w, srow, s->w);
   }
+  graphics_release_frame_buffer(ctx, bmp);
 }
 
-void flip_cell_render(FlipCell *c, GContext *ctx, float t) {
-  if (!c->ready) return;
-  GBitmap *fb = graphics_capture_frame_buffer(ctx);
-  uint8_t *d = gbitmap_get_data(fb);
-  int st = gbitmap_get_bytes_per_row(fb);
-  GRect rect = c->rect;
-  int hinge = rect.origin.y + c->half;
+// Render character c into dst by drawing it in the cell and capturing back.
+static void render_char(FlipSlot *s, GContext *ctx, char c, uint8_t *dst) {
+  char str[2] = { c, 0 };
+  graphics_context_set_fill_color(ctx, s->bg);
+  graphics_fill_rect(ctx, s->cell, 0, GCornerNone);
+  graphics_context_set_text_color(ctx, s->fg);
+  graphics_draw_text(ctx, str, s->font, s->cell,
+                     GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  capture_cell(s, ctx, dst);
+}
 
-  // Static halves: NEW top is revealed immediately; OLD bottom stays until the
-  // new bottom flap covers it.
-  blit_half(d, st, rect, rect.origin.y, c->new_top, c->w, c->half);
-  blit_half(d, st, rect, hinge,         c->old_bot, c->w, c->half);
+// Render line `line`'s bullet into dst by drawing it in the cell and capturing.
+static void render_disc_face(FlipSlot *s, GContext *ctx, uint8_t line, uint8_t *dst) {
+  hero_draw_bullet(ctx, s->cell, s->bundle, line);
+  capture_cell(s, ctx, dst);
+}
+
+// Fold one step: base = bot (seq[k+1]) full cell, then the OLD bottom (top
+// buffer) stays until the NEW bottom (bot buffer) rises; the OLD top falls.
+static void fold_cell(FlipSlot *s, uint8_t *d, int st, float t) {
+  int x0 = s->cell.origin.x;
+  int y0 = s->cell.origin.y;
+  int hinge = y0 + s->half;
+  int bottomY = y0 + s->half * 2;
+  int w = s->w;
+
+  for (int r = 0; r < s->half * 2; r++)           // NEW base (seq[k+1]) full cell
+    memcpy(d + (y0 + r) * st + x0, s->bot + (size_t)r * w, w);
+
+  for (int r = 0; r < s->half; r++)               // OLD bottom static until covered
+    memcpy(d + (hinge + r) * st + x0, s->top + (size_t)(s->half + r) * w, w);
 
   if (t < 0.5f) {
-    float s = fall(t / 0.5f);               // OLD top flap falls 1 -> 0
-    float bright = 0.45f + 0.55f * s;
-    for (int sr = 0; sr < c->half; sr++) {
-      int destY = hinge - (int)((c->half - sr) * s);
-      if (destY < rect.origin.y || destY >= rect.origin.y + rect.size.h) continue;
-      uint8_t *drow = d + destY * st + rect.origin.x;
-      const uint8_t *srow = c->old_top + sr * c->w;
-      for (int x = 0; x < c->w; x++) drow[x] = darken8(srow[x], bright);
+    float fl = fall(t / 0.5f);                     // OLD top flap falls 1 -> 0
+    float bright = 0.45f + 0.55f * fl;
+    for (int sr = 0; sr < s->half; sr++) {
+      int destY = hinge - (int)((s->half - sr) * fl);
+      if (destY < y0 || destY >= bottomY) continue;
+      uint8_t *drow = d + destY * st + x0;
+      const uint8_t *srow = s->top + (size_t)sr * w;
+      for (int x = 0; x < w; x++) drow[x] = darken8(srow[x], bright);
     }
   } else {
-    float s = land((t - 0.5f) / 0.5f);      // NEW bottom flap rises 0 -> 1
-    float cl = s > 1.0f ? 1.0f : s;
+    float la = land((t - 0.5f) / 0.5f);            // NEW bottom flap rises 0 -> 1
+    float cl = la > 1.0f ? 1.0f : la;
     float bright = 0.45f + 0.55f * cl;
-    for (int sr = 0; sr < c->half; sr++) {
-      int destY = hinge + (int)(sr * s);
-      if (destY < rect.origin.y || destY >= rect.origin.y + rect.size.h) continue;
-      uint8_t *drow = d + destY * st + rect.origin.x;
-      const uint8_t *srow = c->new_bot + sr * c->w;
-      for (int x = 0; x < c->w; x++) drow[x] = darken8(srow[x], bright);
+    for (int sr = 0; sr < s->half; sr++) {
+      int destY = hinge + (int)(sr * la);
+      if (destY < y0 || destY >= bottomY) continue;
+      uint8_t *drow = d + destY * st + x0;
+      const uint8_t *srow = s->bot + (size_t)(s->half + sr) * w;
+      for (int x = 0; x < w; x++) drow[x] = darken8(srow[x], bright);
     }
   }
-  graphics_release_frame_buffer(ctx, fb);
+}
+
+void flipslot_render(FlipSlot *s, GContext *ctx, int elapsed_ms) {
+  if (!s->ok) return;
+  int step_ms = s->step_ms;
+  int local = elapsed_ms - s->start_ms;
+  if (local >= s->nsteps * step_ms) return;        // settled: NEW hero base shows
+  if (local < 0) local = 0;
+  int k = local / step_ms;
+  if (k >= s->nsteps) k = s->nsteps - 1;
+  float t = (float)(local - k * step_ms) / (float)step_ms;
+  if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+
+  if (s->last_k != k) {                            // re-render only at step bounds
+    if (s->is_disc) {
+      render_disc_face(s, ctx, (uint8_t)s->seq[k], s->top);
+      render_disc_face(s, ctx, (uint8_t)s->seq[k + 1], s->bot);
+    } else {
+      render_char(s, ctx, s->seq[k], s->top);
+      render_char(s, ctx, s->seq[k + 1], s->bot);
+    }
+    s->last_k = k;
+  }
+
+  GBitmap *bmp = graphics_capture_frame_buffer(ctx);
+  uint8_t *d = gbitmap_get_data(bmp);
+  int st = gbitmap_get_bytes_per_row(bmp);
+  fold_cell(s, d, st, t);
+  graphics_release_frame_buffer(ctx, bmp);
+}
+
+int flipslot_duration(const FlipSlot *s) {
+  return s->start_ms + s->nsteps * s->step_ms;
 }
 
 #else  // b/w: no fold; caller instant-cuts. Stubs keep the link satisfied.
 
-bool flip_cell_init(FlipCell *c, GRect rect) {
-  (void)rect;
-  c->old_top = c->old_bot = c->new_top = c->new_bot = NULL;
-  c->ready = false;
-  return false;
+bool flipslot_text(FlipSlot *s, const HeroGlyph *g, char old_ch, int start_ms, int step_ms) {
+  (void)g; (void)old_ch; (void)start_ms; (void)step_ms; memset(s, 0, sizeof(*s)); return false;
 }
-void flip_cell_free(FlipCell *c) { (void)c; }
-void flip_cell_capture(FlipCell *c, GContext *ctx, bool which_new) {
-  (void)c; (void)ctx; (void)which_new;
+bool flipslot_text_direct(FlipSlot *s, GRect cell, GFont font, GColor fg, GColor bg,
+                          char old_ch, char new_ch, int start_ms, int step_ms) {
+  (void)cell; (void)font; (void)fg; (void)bg; (void)old_ch; (void)new_ch;
+  (void)start_ms; (void)step_ms; memset(s, 0, sizeof(*s)); return false;
 }
-void flip_cell_render(FlipCell *c, GContext *ctx, float t) {
-  (void)c; (void)ctx; (void)t;
+bool flipslot_disc_riffle(FlipSlot *s, GRect cell, const Bundle *b,
+                          const uint8_t *lineseq, int nlen, int start_ms, int step_ms) {
+  (void)cell; (void)b; (void)lineseq; (void)nlen; (void)start_ms; (void)step_ms;
+  memset(s, 0, sizeof(*s)); return false;
+}
+void flipslot_free(FlipSlot *s) { (void)s; }
+void flipslot_render(FlipSlot *s, GContext *ctx, int elapsed_ms) {
+  (void)s; (void)ctx; (void)elapsed_ms;
+}
+int flipslot_duration(const FlipSlot *s) {
+  (void)s; return 0;
 }
 
 #endif

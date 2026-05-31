@@ -8,11 +8,20 @@ void transition_deinit(void);
 
 bool transition_active(void);
 
+// Stop an in-flight flip immediately and drop its scratch, leaving the module
+// idle. Used by fast mode when the user out-presses the animation: the caller
+// instant-commits the new view instead of letting the flip play out.
+void transition_abort(void);
+
 // Start a line-switch flip from (from_line,from_dir) to (to_line,to_dir).
 // No-op (returns false) on b/w or if the cell failed to allocate — caller then
 // commits immediately and redraws normally.
 bool transition_begin_line(uint8_t from_line, uint8_t from_dir,
                            uint8_t to_line, uint8_t to_dir);
+
+// Start a direction-switch horizontal zip (same line, from_dir -> to_dir).
+// No-op (returns false) on b/w or OOM — caller then commits immediately.
+bool transition_begin_dir(uint8_t line, uint8_t from_dir, uint8_t to_dir);
 
 // Advance the animation clock one step. Returns true while still animating,
 // false on the step it finishes (caller commits the target and stops its timer).

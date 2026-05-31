@@ -79,6 +79,14 @@ static void draw_bullet(GContext *ctx, GPoint disc, int r, const LineView *L, bo
   draw_bullet_label(ctx, disc, r, L->label);
 }
 
+void hero_draw_bullet(GContext *ctx, GRect cell, const Bundle *b, uint8_t line) {
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, cell, 0, GCornerNone);
+  if (!b || line >= b->nLines) return;
+  GPoint disc = GPoint(cell.origin.x + cell.size.w / 2, cell.origin.y + cell.size.h / 2);
+  draw_bullet(ctx, disc, cell.size.w / 2, &b->lines[line], false);
+}
+
 static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, const LineView *L) {
   float SX = bounds.size.w / REF_W, SY = bounds.size.h / REF_H;
   graphics_context_set_antialiased(ctx, true);
@@ -105,7 +113,7 @@ static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, co
   // the two can never overlap regardless of how many lines the reason wraps to.
   int foot_inset = PBL_IF_ROUND_ELSE(34, 4);
   int foot_top = bounds.size.h - 18 - PBL_IF_ROUND_ELSE(8, 2);
-  graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite));
+  graphics_context_set_text_color(ctx, GColorWhite);
   graphics_draw_text(ctx, b->station, fonts_get_system_font(FONT_KEY_GOTHIC_14),
     GRect(foot_inset, foot_top, bounds.size.w - 2 * foot_inset, 18),
     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
@@ -288,11 +296,208 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   // Current station, dimmer, below NEXT. Wrap to two lines so long names are
   // never clipped; the box is sized for two lines of GOTHIC_14.
   GFont sf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
-  graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite));
+  graphics_context_set_text_color(ctx, GColorWhite);
   int st_inset = PBL_IF_ROUND_ELSE(34, 4);
   int st_top = (int)(PBL_IF_ROUND_ELSE(132, 138) * SY);
   graphics_draw_text(ctx, b->station, sf, GRect(st_inset, st_top, bounds.size.w - 2 * st_inset, 34),
                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+}
+
+// Emit one HeroGlyph per non-space character of a single line of text, matching
+// where graphics_draw_text would place each glyph. Cumulative prefix widths give
+// each char's x; `align` matches the real draw so centered/left lines line up.
+// Returns the new glyph count. If the line wraps (content taller than one line),
+// emits nothing — the caller leaves that text static.
+static int emit_chars(HeroGlyph *out, int n, int max, const char *s, GFont f,
+                      GColor fg, GColor bg, GRect box, GTextAlignment align, uint8_t row) {
+  size_t len = strlen(s);
+  if (len == 0) return n;
+  GSize full = graphics_text_layout_get_content_size(s, f, box, GTextOverflowModeFill, align);
+  GSize one  = graphics_text_layout_get_content_size("Wg", f,
+                 GRect(0, 0, 400, 200), GTextOverflowModeFill, GTextAlignmentLeft);
+  if (full.h > one.h + 2) return n;              // wrapped: leave static, don't riffle
+  int line_h = full.h;
+  int startx;
+  if (align == GTextAlignmentCenter)     startx = box.origin.x + (box.size.w - full.w) / 2;
+  else if (align == GTextAlignmentRight) startx = box.origin.x + (box.size.w - full.w);
+  else                                   startx = box.origin.x;
+
+  char buf[40];
+  int prevw = 0;
+  for (size_t i = 0; i < len && i < sizeof(buf) - 1 && n < max; i++) {
+    memcpy(buf, s, i + 1); buf[i + 1] = 0;
+    GSize ps = graphics_text_layout_get_content_size(buf, f,
+                 GRect(0, 0, 400, line_h + 8), GTextOverflowModeFill, GTextAlignmentLeft);
+    int curw = ps.w;
+    if (s[i] != ' ') {
+      HeroGlyph *g = &out[n++];
+      g->cell = GRect(startx + prevw, box.origin.y, curw - prevw, line_h);
+      g->ch = s[i]; g->font = f; g->fg = fg; g->bg = bg; g->row = row; g->kind = HG_TEXT;
+    }
+    prevw = curw;
+  }
+  return n;
+}
+
+int hero_glyphs(GRect bounds, const Bundle *b, uint8_t line, uint8_t dir,
+                time_t now, HeroGlyph *out, int max) {
+  if (!b || line >= b->nLines) return 0;
+  const LineView *L = &b->lines[line];
+  if (L->nDirs == 0) return 0;                   // suspended hero: no flip glyphs
+  if (dir >= L->nDirs) dir = 0;
+  const DirView *D = &L->dirs[dir];
+  if (D->n == 0) return 0;
+
+  float SX = bounds.size.w / REF_W, SY = bounds.size.h / REF_H;
+  int n = 0;
+
+  // --- direction label (row 0) ------------------------------------------------
+  static const char *const DIR_LABELS[] = { "MANHATTAN", "BROOKLYN", "QUEENS", "BRONX" };
+  int hdr_inset = PBL_IF_ROUND_ELSE(34, 4);
+  int dir_top = (int)(6 * SY);
+  const char *dlabel = (D->dir < 4) ? DIR_LABELS[D->dir] : NULL;
+  if (dlabel) {
+    n = emit_chars(out, n, max, dlabel, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+                   GColorLightGray, GColorBlack,
+                   GRect(hdr_inset, dir_top, bounds.size.w - 2 * hdr_inset, 16),
+                   GTextAlignmentCenter, 0);
+  }
+
+  // --- headsign (row 1) -------------------------------------------------------
+  GFont hdr = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+  int hdr_top = dir_top + (dlabel ? 14 : 2);
+  int hdr_h = PBL_IF_ROUND_ELSE(38, 22);
+  n = emit_chars(out, n, max, D->dest, hdr, GColorWhite, GColorBlack,
+                 GRect(hdr_inset, hdr_top, bounds.size.w - 2 * hdr_inset, hdr_h),
+                 GTextAlignmentCenter, 1);
+
+  // --- disc + countdown (row 2) — geometry mirrors hero_draw ------------------
+  int lift = (int)((SY - 1.0f) * 30.0f);
+  GPoint disc = GPoint((int)(DISC_CX * SX), (int)(DISC_CY * SY) - lift);
+  int r = (int)(DISC_R * ((SX + SY) / 2));
+  if (r > 35) r = 35;
+
+  char num[12];
+  int secs = (int)(b->epochBase + D->delta[0]) - (int)now;
+  int mins = secs / 60;
+  fmt_count(mins, num, sizeof(num));
+  bool isNow = (mins <= 0);
+  bool isDouble = (!isNow && mins >= 10);
+  float leftX = isNow ? 75.8f : (isDouble ? 68.8f : 76.6f);
+  float baseY = isNow ? 91.5f : (isDouble ? 95.1f : 96.8f);
+  GFont nf = isNow ? fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD)
+                   : fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
+  GSize ns = graphics_text_layout_get_content_size(num, nf,
+               GRect(0, 0, bounds.size.w, bounds.size.h), GTextOverflowModeFill, GTextAlignmentLeft);
+  int nx = (int)(leftX * SX);
+#if defined(PBL_ROUND)
+  {
+    GFont uf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+    int min_gap = isNow ? 0 : (int)(MIN_GAP * SX);
+    int min_w = 0;
+    if (!isNow) {
+      GSize msz = graphics_text_layout_get_content_size("min", uf,
+                    GRect(0, 0, 40, 18), GTextOverflowModeFill, GTextAlignmentLeft);
+      min_w = msz.w;
+    }
+    int gleft = disc.x - r;
+    int gright = nx + ns.w + (isNow ? 0 : (min_gap + min_w));
+    int hshift = bounds.size.w / 2 - (gleft + gright) / 2;
+    disc.x += hshift;
+    nx += hshift;
+  }
+#else
+  nx += (int)((SX - 1.0f) * 26.0f);
+#endif
+
+  if (n < max) {                                 // disc bullet, single fold
+    HeroGlyph *g = &out[n++];
+    g->cell = GRect(disc.x - r, disc.y - r, 2 * r, 2 * r);
+    g->ch = 0; g->font = NULL; g->fg = GColorWhite; g->bg = GColorBlack;
+    g->row = 2; g->kind = HG_DISC;
+  }
+  int ny = disc.y + (int)(baseY - DISC_CY) - ns.h;
+  n = emit_chars(out, n, max, num, nf, GColorWhite, GColorBlack,
+                 GRect(nx, ny, ns.w + 4, ns.h + 8), GTextAlignmentLeft, 2);
+
+  // --- NEXT row numeric tokens (row 3) ---------------------------------------
+  GFont ff = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  int ft_top = (int)(PBL_IF_ROUND_ELSE(110, 116) * SY);
+  int ft_h = 24;
+  char ntok[3][8]; bool nexp[3]; int nTok = 0;
+  for (int a = 1; a < D->n && nTok < 3; a++) {
+    int m = (int)(b->epochBase + D->delta[a]) - (int)now; if (m < 0) m = 0;
+    snprintf(ntok[nTok], sizeof(ntok[nTok]), "%d", m / 60);
+    nexp[nTok] = (D->expMask >> a) & 1;
+    nTok++;
+  }
+  if (nTok > 0) {
+    int gap = 7;
+    int R = ft_h / 2;
+    GSize lblsz = graphics_text_layout_get_content_size("NEXT", ff,
+                    GRect(0, 0, 100, ft_h), GTextOverflowModeFill, GTextAlignmentLeft);
+    int tw[3], slot[3], total = lblsz.w + gap;
+    for (int t = 0; t < nTok; t++) {
+      GSize s = graphics_text_layout_get_content_size(ntok[t], ff,
+                  GRect(0, 0, 60, ft_h), GTextOverflowModeFill, GTextAlignmentLeft);
+      tw[t] = s.w;
+      slot[t] = nexp[t] ? (2 * R) : tw[t];
+      total += slot[t] + (t < nTok - 1 ? gap : 0);
+    }
+    int x = (bounds.size.w - total) / 2; if (x < 2) x = 2;
+    x += lblsz.w + gap;
+    for (int t = 0; t < nTok; t++) {
+      int cx = x + slot[t] / 2;
+      n = emit_chars(out, n, max, ntok[t], ff, GColorLightGray, GColorBlack,
+                     GRect(cx - tw[t] / 2, ft_top, tw[t] + 4, ft_h), GTextAlignmentLeft, 3);
+      x += slot[t] + gap;
+    }
+  }
+
+  return n;
+}
+
+int hero_station_glyphs(GRect bounds, const char *station, HeroGlyph *out, int max) {
+  if (!station || !station[0]) return 0;
+  float SY = bounds.size.h / REF_H;
+  GFont sf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  int st_inset = PBL_IF_ROUND_ELSE(34, 4);
+  int st_top = (int)(PBL_IF_ROUND_ELSE(132, 138) * SY);
+  return emit_chars(out, 0, max, station, sf, GColorWhite, GColorBlack,
+                    GRect(st_inset, st_top, bounds.size.w - 2 * st_inset, 34),
+                    GTextAlignmentCenter, 4);
+}
+
+GRect hero_station_rect(GRect bounds) {
+  float SY = bounds.size.h / REF_H;
+  int st_top = (int)(PBL_IF_ROUND_ELSE(132, 138) * SY);
+  int h = 34;
+  if (st_top + h > bounds.size.h) h = bounds.size.h - st_top;
+  if (h < 0) h = 0;
+  return GRect(0, st_top, bounds.size.w, h);
+}
+
+void hero_ghost_board(GContext *ctx, GRect bounds) {
+#if defined(PBL_COLOR)
+  uint8_t bg = GColorBlack.argb;
+  uint8_t hi = GColorLightGray.argb;   // bright ink (white text) ghosts to light grey
+  uint8_t lo = GColorDarkGray.argb;    // everything else collapses to dark grey
+  GBitmap *fb = graphics_capture_frame_buffer(ctx);
+  uint8_t *d = gbitmap_get_data(fb);
+  int st = gbitmap_get_bytes_per_row(fb);
+  for (int y = 0; y < bounds.size.h; y++) {
+    uint8_t *row = d + y * st;
+    for (int x = 0; x < bounds.size.w; x++) {
+      uint8_t p = row[x];
+      if (p == bg) continue;                       // leave the black field alone
+      int luma = ((p >> 4) & 3) + ((p >> 2) & 3) + (p & 3);  // 0..9
+      row[x] = (luma >= 6) ? hi : lo;
+    }
+  }
+  graphics_release_frame_buffer(ctx, fb);
+#else
+  (void)ctx; (void)bounds;
+#endif
 }
 
 GRect hero_flip_rect(GRect bounds) {
@@ -305,4 +510,32 @@ GRect hero_flip_rect(GRect bounds) {
   int h = bot - top;
   if (h & 1) h++;                       // even height: clean hinge split
   return GRect(0, top, bounds.size.w, h);
+}
+
+static GRect even_band(int y, int w, int h) {
+  if (h < 2) h = 2;
+  if (h & 1) h++;
+  return GRect(0, y, w, h);
+}
+
+int hero_flip_bands(GRect bounds, GRect *out, int max) {
+  float SY = bounds.size.h / REF_H;
+  int w = bounds.size.w;
+  int lift = (int)((SY - 1.0f) * 30.0f);     // disc lifts on tall screens (see hero_draw)
+
+  // The disc+countdown band defines the anchors; the text bands above tile down
+  // to its top and the NEXT band tiles below it, so the four never overlap and
+  // leave no gap regardless of platform scale.
+  GRect disc = hero_flip_rect(bounds);
+  disc.origin.y -= lift;
+  int dir_top = (int)(4 * SY);
+  int hs_top  = (int)(20 * SY);
+  int nx_top  = disc.origin.y + disc.size.h + (int)(2 * SY);
+
+  int n = 0;
+  if (n < max) out[n++] = even_band(dir_top, w, hs_top - dir_top);          // direction label
+  if (n < max) out[n++] = even_band(hs_top, w, disc.origin.y - hs_top);     // headsign
+  if (n < max) out[n++] = disc;                                            // disc + countdown
+  if (n < max) out[n++] = even_band(nx_top, w, (int)(26 * SY));             // NEXT row
+  return n;
 }

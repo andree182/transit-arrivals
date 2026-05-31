@@ -26,6 +26,13 @@ def configure(ctx):
 def build(ctx):
     ctx.load('pebble_sdk')
 
+    # Set MTA_DEBUG_STUB=1 in the environment to compile in a synthetic bundle
+    # so the hero renders in the emulator (which has no live MTA feed). Used for
+    # screenshotting/tuning the flip + zip motion; never set for a release build.
+    if os.environ.get('MTA_DEBUG_STUB'):
+        for env in ctx.all_envs.values():
+            env.append_value('DEFINES', 'MTA_DEBUG_STUB=1')
+
     build_worker = os.path.exists('worker_src')
     binaries = []
 
