@@ -294,3 +294,15 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   graphics_draw_text(ctx, b->station, sf, GRect(st_inset, st_top, bounds.size.w - 2 * st_inset, 34),
                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
 }
+
+GRect hero_flip_rect(GRect bounds) {
+  float SY = bounds.size.h / REF_H;
+  // Band spans from just above the disc to just below the countdown baseline,
+  // between the headsign (ends ~40) and the NEXT row (starts ~110). Full width
+  // so there is no horizontal layout math to track.
+  int top = (int)(40 * SY);
+  int bot = (int)(112 * SY);
+  int h = bot - top;
+  if (h & 1) h++;                       // even height: clean hinge split
+  return GRect(0, top, bounds.size.w, h);
+}
