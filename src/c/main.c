@@ -22,6 +22,7 @@ static const GPathInfo WARN_TRI = { 3, (GPoint[]){ {8, 0}, {16, 14}, {0, 14} } }
 static Window *s_window;
 static Layer *s_canvas;
 static AppTimer *s_poll;
+static AppTimer *s_launch_settle = NULL;  // launch flip-in fallback (see launch_settle_cb)
 static Bundle s_bundle;
 static bool s_have_bundle = false;
 static int s_error = -1;        // -1 none; 0 ready; 1 no-loc; 2 bad-station; 3 offline; 4 no-trains
@@ -585,6 +586,7 @@ static void switch_to(uint8_t sel) {
   }
   s_switching = true;
   s_error = -1;
+  if (s_launch_settle) { app_timer_cancel(s_launch_settle); s_launch_settle = NULL; }
   persist_write_int(PERSIST_SEL, s_sel);
   request_refresh();
   render_dispatch();
@@ -655,9 +657,44 @@ static void commit_view_instant(uint8_t to_line, uint8_t to_dir) {
   persist_view();
   render_dispatch();
 }
+// Single-line / dead-press nudge: when a press can't change the board (only one
+// line, or a one-way line's SELECT), bob just the bullet disc + countdown a few px
+// in the pressed direction and spring back — a tactile "nothing here" with no flip,
+// leaving the rest of the board still. s_bounce_dy is applied by hero_bounce_band
+// in the render pass; the timer animates it out-and-back along a half-sine.
+#define BOUNCE_MS   260
+#define BOUNCE_AMP  7
+static AppTimer *s_bounce_timer = NULL;
+static int s_bounce_t = 0;
+static int s_bounce_sign = 1;
+static int s_bounce_dy = 0;
+
+static void bounce_step(void *ctx) {
+  s_bounce_timer = NULL;
+  s_bounce_t += 33;
+  if (s_bounce_t >= BOUNCE_MS) {                              // home: band back in place
+    s_bounce_dy = 0;
+    if (s_canvas) layer_mark_dirty(s_canvas);
+    return;
+  }
+  int32_t a = (TRIG_MAX_ANGLE / 2) * s_bounce_t / BOUNCE_MS;  // 0..pi: out and back
+  s_bounce_dy = s_bounce_sign * BOUNCE_AMP * sin_lookup(a) / TRIG_MAX_RATIO;
+  if (s_canvas) layer_mark_dirty(s_canvas);
+  s_bounce_timer = app_timer_register(33, bounce_step, NULL);
+}
+static void bounce_start(int sign) {
+  if (!s_canvas) return;
+  if (s_bounce_timer) app_timer_cancel(s_bounce_timer);
+  s_bounce_sign = sign;
+  s_bounce_t = 0;
+  s_bounce_dy = 0;
+  s_bounce_timer = app_timer_register(33, bounce_step, NULL);
+}
+
 static void next_line(ClickRecognizerRef r, void *c) {
   if (!s_have_bundle || s_bundle.nLines == 0) return;
   arrival_cancel();   // scrolling lines interrupts the gold wipe
+  if (s_bundle.nLines <= 1) { bounce_start(+1); return; }   // one line: nudge, don't flip to self
   bool outpaced = s_fast || transition_active();   // pressed faster than the flip
   snap_active_transition();
   uint8_t to = (s_line + 1) % s_bundle.nLines;
@@ -674,6 +711,7 @@ static void next_line(ClickRecognizerRef r, void *c) {
 static void prev_line(ClickRecognizerRef r, void *c) {
   if (!s_have_bundle || s_bundle.nLines == 0) return;
   arrival_cancel();   // scrolling lines interrupts the gold wipe
+  if (s_bundle.nLines <= 1) { bounce_start(-1); return; }   // one line: nudge up, don't flip to self
   bool outpaced = s_fast || transition_active();
   snap_active_transition();
   uint8_t to = (s_line + s_bundle.nLines - 1) % s_bundle.nLines;
@@ -693,7 +731,8 @@ static void flip_dir(ClickRecognizerRef r, void *c) {
   bool outpaced = s_fast || transition_active();
   snap_active_transition();   // adopt any in-flight target so we toggle on from it
   uint8_t nd = s_bundle.lines[s_line].nDirs; if (nd <= 1) {
-    if (nd == 1 && s_dir != 0) { commit_view_instant(s_line, 0); }
+    if (nd == 1 && s_dir != 0) commit_view_instant(s_line, 0);
+    else bounce_start(+1);   // one-way line: nudge on a dead SELECT
     return;
   }
   uint8_t to = (s_dir + 1) % nd;
@@ -731,6 +770,22 @@ static void click_config(void *ctx) {
 static void loading_land_current(void) {
   if (!loading_active() || loading_landing()) return;
   loading_land(&s_bundle, s_line, s_dir, time(NULL));
+}
+
+// Launch with a cached bundle flips the board in through the interstitial while a
+// fresh fetch is in flight (see init): the riffle plays, and inbox_received lands
+// it onto fresh data. This is the fallback — if no fresh data (or error) has
+// arrived in time, settle the riffle onto the cached bundle so the board always
+// appears, even when the phone is silent.
+#define LAUNCH_SETTLE_MS 5000
+static void launch_settle_cb(void *ctx) {
+  s_launch_settle = NULL;
+  if (!s_switching) return;          // fresh data already landed; nothing to rescue
+  s_switching = false;
+#if defined(PBL_COLOR)
+  loading_land_current();            // settle the riffle onto the cached board
+#endif
+  render_dispatch();                 // b/w (no riffle): just reveal the cached board
 }
 
 static void inbox_received(DictionaryIterator *iter, void *ctx) {
@@ -775,6 +830,7 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
     if (s_have_bundle) { strncpy(prev_id, s_bundle.id, sizeof(prev_id) - 1); prev_id[sizeof(prev_id) - 1] = '\0'; }
     if (bundle_decode(bun->value->data, bun->length, &s_bundle)) {
       s_have_bundle = true; s_error = -1;
+      if (s_launch_settle) { app_timer_cancel(s_launch_settle); s_launch_settle = NULL; }
       if (strcmp(prev_id, s_bundle.id) != 0) {
         s_line = 0; s_dir = 0;                            // new station: start at the top
         memset(s_line_dir, 0, sizeof(s_line_dir));        // and forget the old station's per-line directions
@@ -889,6 +945,7 @@ static void canvas_update(Layer *layer, GContext *ctx) {
 
   hero_draw(ctx, b, &s_bundle, s_line, s_dir, time(NULL));
   arrival_render(ctx, b, &s_bundle, s_line, s_dir, time(NULL));  // gold wipe over the just-drawn board
+  if (s_bounce_dy) hero_bounce_band(ctx, b, s_bounce_dy);        // single-line nudge: bob the disc + countdown
 
   // Ring position, e.g. "2/4". Shown only when the ring has more than one slot.
   if (ring_len() > 1) {
@@ -944,6 +1001,7 @@ static void window_unload(Window *w) {
   if (s_flip_timer) { app_timer_cancel(s_flip_timer); s_flip_timer = NULL; }
   if (s_arrival_timer) { app_timer_cancel(s_arrival_timer); s_arrival_timer = NULL; }
   if (s_fast_timer) { app_timer_cancel(s_fast_timer); s_fast_timer = NULL; }
+  if (s_bounce_timer) { app_timer_cancel(s_bounce_timer); s_bounce_timer = NULL; }
   load_stop(); loading_deinit();
   gpath_destroy(s_warn_path); transition_deinit(); layer_destroy(s_canvas); s_canvas = NULL;
 }
@@ -1107,6 +1165,14 @@ static void init(void) {
     s_line = (uint8_t)((v >> 8) & 0xff);
     s_dir = (uint8_t)(v & 0xff);
     clamp_view();
+  }
+  // Reopen with cached data: flip the board in through the interstitial as fresh
+  // data fetches, instead of snapping the stale cache on screen. The 'ready'
+  // round-trip requests a refresh; inbox_received lands the riffle on arrival,
+  // and launch_settle_cb falls back to the cached board if nothing comes.
+  if (s_have_bundle) {
+    s_switching = true;
+    s_launch_settle = app_timer_register(LAUNCH_SETTLE_MS, launch_settle_cb, NULL);
   }
   s_window = window_create();
   window_set_background_color(s_window, GColorBlack);

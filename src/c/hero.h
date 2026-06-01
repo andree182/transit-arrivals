@@ -59,6 +59,12 @@ int hero_station_glyphs(GRect bounds, const char *station, HeroGlyph *out, int m
 // such as the arrival wipe. Height is clamped to the bounds.
 GRect hero_station_rect(GRect bounds);
 
+// Bounce the bullet-disc + countdown band vertically by `dy` pixels (a framebuffer
+// post-pass over the just-drawn board), leaving the rest of the hero put. Used for
+// the single-line "nothing here" nudge. The vacated edge fills with background and
+// the far edge clips — `dy` should stay small. Color only (no-op on b/w).
+void hero_bounce_band(GContext *ctx, GRect bounds, int dy);
+
 // Desaturate-and-dim the whole board to a two-tone grey ("ghost"), signalling
 // that the data on screen is stale/not-live. A framebuffer post-pass: call AFTER
 // the board and its chrome are drawn. Non-background pixels collapse to light or

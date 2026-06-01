@@ -518,6 +518,49 @@ static GRect even_band(int y, int w, int h) {
   return GRect(0, y, w, h);
 }
 
+void hero_bounce_band(GContext *ctx, GRect bounds, int dy) {
+#if defined(PBL_COLOR)
+  if (dy == 0) return;
+  GRect bands[HERO_FLIP_BANDS];
+  int nb = hero_flip_bands(bounds, bands, HERO_FLIP_BANDS);
+  if (nb < 3) return;
+  GRect band = bands[2];                        // the disc + countdown band, as drawn
+  int x0 = band.origin.x, x1 = x0 + band.size.w;
+  int y0 = band.origin.y, y1 = y0 + band.size.h;
+  if (x0 < 0) x0 = 0;
+  if (x1 > bounds.size.w) x1 = bounds.size.w;
+  if (y0 < 0) y0 = 0;
+  if (y1 > bounds.size.h) y1 = bounds.size.h;
+
+  uint8_t bg = GColorBlack.argb;
+  GBitmap *fb = graphics_capture_frame_buffer(ctx);
+  uint8_t *d = gbitmap_get_data(fb);
+  int st = gbitmap_get_bytes_per_row(fb);
+  // In-place vertical shift confined to the band. Iterate so a destination row is
+  // written only after its source row has been read (high->low when moving down,
+  // low->high when moving up); rows with no source within the band fill with bg.
+  if (dy > 0) {
+    for (int y = y1 - 1; y >= y0; y--) {
+      uint8_t *dst = d + y * st;
+      int sy = y - dy;
+      uint8_t *src = (sy >= y0) ? d + sy * st : NULL;
+      for (int x = x0; x < x1; x++) dst[x] = src ? src[x] : bg;
+    }
+  } else {
+    int up = -dy;
+    for (int y = y0; y < y1; y++) {
+      uint8_t *dst = d + y * st;
+      int sy = y + up;
+      uint8_t *src = (sy < y1) ? d + sy * st : NULL;
+      for (int x = x0; x < x1; x++) dst[x] = src ? src[x] : bg;
+    }
+  }
+  graphics_release_frame_buffer(ctx, fb);
+#else
+  (void)ctx; (void)bounds; (void)dy;
+#endif
+}
+
 int hero_flip_bands(GRect bounds, GRect *out, int max) {
   float SY = bounds.size.h / REF_H;
   int w = bounds.size.w;

@@ -1,8 +1,10 @@
 {
   "name": "mta-arrivals",
   "author": "David Torcivia",
-  "version": "1.4.0",
-  "keywords": ["pebble-app"],
+  "version": "1.4.1",
+  "keywords": [
+    "pebble-app"
+  ],
   "private": true,
   "dependencies": {},
   "pebble": {
@@ -10,9 +12,21 @@
     "uuid": "ed4e3adb-9e84-45f6-be7d-da51d2ca4e1d",
     "sdkVersion": "3",
     "enableMultiJS": true,
-    "targetPlatforms": ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"],
-    "watchapp": { "watchface": false },
-    "capabilities": ["location", "configurable"],
+    "targetPlatforms": [
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "capabilities": [
+      "location",
+      "configurable"
+    ],
     "messageKeys": [
       "Request",
       "UseNearest",
