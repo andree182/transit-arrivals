@@ -9,12 +9,20 @@ function haversine(aLat, aLon, bLat, bLon) {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
+// ~100 km: comfortably covers the NYC metro + PATH service area, but excludes
+// other cities. Beyond it the user isn't near the system at all.
+var SERVICE_RADIUS_M = 100000;
+var DEFAULT_STATION_ID = 'R16';   // Times Sq-42 St — the canonical fallback hub
+
 function nearestStation(lat, lon) {
   var best = null, bestD = Infinity;
   for (var i = 0; i < DB.length; i++) {
     var d = haversine(lat, lon, DB[i].lat, DB[i].lon);
     if (d < bestD) { bestD = d; best = DB[i]; }
   }
+  // Outside the service area (e.g. a user in LA): default to Times Square rather
+  // than the meaningless "closest" station thousands of miles away.
+  if (!best || bestD > SERVICE_RADIUS_M) return getStation(DEFAULT_STATION_ID) || best;
   return best;
 }
 

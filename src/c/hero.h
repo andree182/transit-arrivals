@@ -6,6 +6,12 @@
 // `now` is current epoch secs; countdown = epochBase + delta - now.
 void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8_t dir, time_t now);
 
+// Write `full` into out[n] with the trailing " (lines)" service-line list removed
+// (e.g. "14 St-Union Sq (456LNQRW)" -> "14 St-Union Sq"). The phone appends that
+// list to every station name; on the watch the line is already the big roundel, so
+// it is redundant. A " · PATH" tag and names with no trailing "(...)" are kept.
+void hero_station_strip(const char *full, char *out, size_t n);
+
 // The full-width middle band (bullet disc + countdown) for a given canvas
 // bounds. This is the region the line-switch flip folds. Height is even.
 GRect hero_flip_rect(GRect bounds);
@@ -65,9 +71,3 @@ GRect hero_station_rect(GRect bounds);
 // the far edge clips — `dy` should stay small. Color only (no-op on b/w).
 void hero_bounce_band(GContext *ctx, GRect bounds, int dy);
 
-// Desaturate-and-dim the whole board to a two-tone grey ("ghost"), signalling
-// that the data on screen is stale/not-live. A framebuffer post-pass: call AFTER
-// the board and its chrome are drawn. Non-background pixels collapse to light or
-// dark grey by luma; live color returns on the next fresh draw. Color only
-// (no-op on b/w, which has no color to drain).
-void hero_ghost_board(GContext *ctx, GRect bounds);

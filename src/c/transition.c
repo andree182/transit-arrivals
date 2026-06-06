@@ -134,9 +134,12 @@ bool transition_render(GContext *ctx, GRect bounds, const Bundle *b, time_t now)
       if (s_kind == TK_DIR) {
         // Three zip bands from the hero's flip bands: top = direction label +
         // headsign (bands 0+1 merged), middle = disc + countdown, bottom = NEXT.
-        GRect hb[HERO_FLIP_BANDS];
+        // Static, not stack: the app task stack is tiny and the render call chain
+        // (transition_render -> hero_draw -> draw_bullet -> graphics_text_layout)
+        // runs close to its limit. One transition preps at a time, so this is safe.
+        static GRect hb[HERO_FLIP_BANDS];
         int nb = hero_flip_bands(bounds, hb, HERO_FLIP_BANDS);
-        GRect rects[ZIP_BANDS];
+        static GRect rects[ZIP_BANDS];
         if (nb >= 4) {
           rects[0] = GRect(0, hb[0].origin.y, bounds.size.w,
                            hb[1].origin.y + hb[1].size.h - hb[0].origin.y);
@@ -169,13 +172,16 @@ bool transition_render(GContext *ctx, GRect bounds, const Bundle *b, time_t now)
 
       // Per-row column totals for the NEW list (text glyphs only), so we can
       // align numeric rows right and text rows left when pairing to OLD chars.
-      int new_total[8] = {0}, old_total[8] = {0};
+      // Static, not stack: keep transition_render's frame small (see note above).
+      static int new_total[8], old_total[8], row_col[8];
+      memset(new_total, 0, sizeof new_total);
+      memset(old_total, 0, sizeof old_total);
+      memset(row_col, 0, sizeof row_col);
       for (int i = 0; i < n_new; i++)
         if (newg[i].kind == HG_TEXT && newg[i].row < 8) new_total[newg[i].row]++;
       for (int i = 0; i < n_old; i++)
         if (oldg[i].kind == HG_TEXT && oldg[i].row < 8) old_total[oldg[i].row]++;
 
-      int row_col[8] = {0};                  // running column index per row
       s_nslots = 0;
 
       for (int i = 0; i < n_new && s_nslots < HERO_MAX_GLYPHS; i++) {

@@ -1,4 +1,5 @@
 #include "flip.h"
+#include "fb.h"
 #include <string.h>
 
 #if defined(PBL_COLOR)
@@ -112,15 +113,24 @@ void flipslot_free(FlipSlot *s) {
   s->ok = false;
 }
 
-// Copy the just-drawn cell out of the framebuffer into dst.
+// Copy the just-drawn cell out of the framebuffer into dst. Clamped to the
+// framebuffer's valid pixels per row (gbitmap_get_bytes_per_row() is 0 on round,
+// and a cell can extend off-screen on any platform) — off-screen pixels read as
+// background so the packed dst buffer is always fully initialised.
 static void capture_cell(FlipSlot *s, GContext *ctx, uint8_t *dst) {
   GBitmap *bmp = graphics_capture_frame_buffer(ctx);
-  uint8_t *d = gbitmap_get_data(bmp);
-  int st = gbitmap_get_bytes_per_row(bmp);
-  int rows = s->half * 2;
+  int H = fb_height(bmp);
+  int rows = s->half * 2, w = s->w, x0 = s->cell.origin.x;
+  uint8_t bg = GColorBlack.argb;
   for (int r = 0; r < rows; r++) {
-    const uint8_t *srow = d + (s->cell.origin.y + r) * st + s->cell.origin.x;
-    memcpy(dst + (size_t)r * s->w, srow, s->w);
+    uint8_t *out = dst + (size_t)r * w;
+    FBRow f = fb_row(bmp, s->cell.origin.y + r, H, x0, x0 + w);
+    if (f.ok && f.xa == x0 && f.xb == x0 + w - 1) {   // whole row valid (rect fast path)
+      memcpy(out, f.row + x0, (size_t)w);
+    } else {                                          // clipped: bg-fill then copy valid span
+      for (int c = 0; c < w; c++) out[c] = bg;
+      if (f.ok) for (int x = f.xa; x <= f.xb; x++) out[x - x0] = f.row[x];
+    }
   }
   graphics_release_frame_buffer(ctx, bmp);
 }
@@ -144,7 +154,8 @@ static void render_disc_face(FlipSlot *s, GContext *ctx, uint8_t line, uint8_t *
 
 // Fold one step: base = bot (seq[k+1]) full cell, then the OLD bottom (top
 // buffer) stays until the NEW bottom (bot buffer) rises; the OLD top falls.
-static void fold_cell(FlipSlot *s, uint8_t *d, int st, float t) {
+static void fold_cell(FlipSlot *s, GBitmap *fb, float t) {
+  int H = fb_height(fb);
   int x0 = s->cell.origin.x;
   int y0 = s->cell.origin.y;
   int hinge = y0 + s->half;
@@ -152,10 +163,10 @@ static void fold_cell(FlipSlot *s, uint8_t *d, int st, float t) {
   int w = s->w;
 
   for (int r = 0; r < s->half * 2; r++)           // NEW base (seq[k+1]) full cell
-    memcpy(d + (y0 + r) * st + x0, s->bot + (size_t)r * w, w);
+    fb_blit_row(fb, y0 + r, H, x0, s->bot + (size_t)r * w, w);
 
   for (int r = 0; r < s->half; r++)               // OLD bottom static until covered
-    memcpy(d + (hinge + r) * st + x0, s->top + (size_t)(s->half + r) * w, w);
+    fb_blit_row(fb, hinge + r, H, x0, s->top + (size_t)(s->half + r) * w, w);
 
   if (t < 0.5f) {
     float fl = fall(t / 0.5f);                     // OLD top flap falls 1 -> 0
@@ -163,9 +174,9 @@ static void fold_cell(FlipSlot *s, uint8_t *d, int st, float t) {
     for (int sr = 0; sr < s->half; sr++) {
       int destY = hinge - (int)((s->half - sr) * fl);
       if (destY < y0 || destY >= bottomY) continue;
-      uint8_t *drow = d + destY * st + x0;
       const uint8_t *srow = s->top + (size_t)sr * w;
-      for (int x = 0; x < w; x++) drow[x] = darken8(srow[x], bright);
+      FBRow f = fb_row(fb, destY, H, x0, x0 + w);
+      if (f.ok) for (int x = f.xa; x <= f.xb; x++) f.row[x] = darken8(srow[x - x0], bright);
     }
   } else {
     float la = land((t - 0.5f) / 0.5f);            // NEW bottom flap rises 0 -> 1
@@ -174,9 +185,9 @@ static void fold_cell(FlipSlot *s, uint8_t *d, int st, float t) {
     for (int sr = 0; sr < s->half; sr++) {
       int destY = hinge + (int)(sr * la);
       if (destY < y0 || destY >= bottomY) continue;
-      uint8_t *drow = d + destY * st + x0;
       const uint8_t *srow = s->bot + (size_t)(s->half + sr) * w;
-      for (int x = 0; x < w; x++) drow[x] = darken8(srow[x], bright);
+      FBRow f = fb_row(fb, destY, H, x0, x0 + w);
+      if (f.ok) for (int x = f.xa; x <= f.xb; x++) f.row[x] = darken8(srow[x - x0], bright);
     }
   }
 }
@@ -204,9 +215,7 @@ void flipslot_render(FlipSlot *s, GContext *ctx, int elapsed_ms) {
   }
 
   GBitmap *bmp = graphics_capture_frame_buffer(ctx);
-  uint8_t *d = gbitmap_get_data(bmp);
-  int st = gbitmap_get_bytes_per_row(bmp);
-  fold_cell(s, d, st, t);
+  fold_cell(s, bmp, t);
   graphics_release_frame_buffer(ctx, bmp);
 }
 

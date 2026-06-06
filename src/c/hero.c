@@ -15,6 +15,24 @@ static void fmt_count(int mins, char *out, size_t n) {
   else snprintf(out, n, "%d", mins);
 }
 
+void hero_station_strip(const char *full, char *out, size_t n) {
+  if (n == 0) return;
+  size_t len = strlen(full);
+  size_t cut = len;
+  // The phone appends exactly one trailing " (lines)" group; drop it (and the
+  // separating space). Leave any name without a trailing ")" — and " · PATH" —
+  // untouched.
+  if (len >= 3 && full[len - 1] == ')') {
+    for (size_t i = len - 1; i >= 1; i--) {
+      if (full[i - 1] == ' ' && full[i] == '(') { cut = i - 1; break; }
+      if (i == 1) break;
+    }
+  }
+  if (cut > n - 1) cut = n - 1;
+  memcpy(out, full, cut);
+  out[cut] = 0;
+}
+
 // Draw the roundel label centered on the disc. Single-char MTA bullets use the
 // big Bitham face; multi-char labels (PATH's "NW"/"W3"…, the 3-char "SIR") step
 // down to Gothic bold so both glyphs sit inside the disc instead of spilling out
@@ -58,8 +76,9 @@ static void draw_bullet(GContext *ctx, GPoint disc, int r, const LineView *L, bo
     // A square rotated 45°, vertices on the disc's bounding box so it keeps the
     // circle's footprint (layout downstream is unchanged). Built per-draw because
     // r varies by platform; the points array outlives the GPath it feeds.
-    GPoint pts[4] = { GPoint(disc.x, disc.y - r), GPoint(disc.x + r, disc.y),
-                      GPoint(disc.x, disc.y + r), GPoint(disc.x - r, disc.y) };
+    static GPoint pts[4];
+    pts[0] = GPoint(disc.x, disc.y - r); pts[1] = GPoint(disc.x + r, disc.y);
+    pts[2] = GPoint(disc.x, disc.y + r); pts[3] = GPoint(disc.x - r, disc.y);
     GPathInfo info = { 4, pts };
     GPath *dp = gpath_create(&info);
     gpath_draw_filled(ctx, dp);
@@ -114,7 +133,9 @@ static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, co
   int foot_inset = PBL_IF_ROUND_ELSE(34, 4);
   int foot_top = bounds.size.h - 18 - PBL_IF_ROUND_ELSE(8, 2);
   graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, b->station, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+  static char stn[40];
+  hero_station_strip(b->station, stn, sizeof stn);
+  graphics_draw_text(ctx, stn, fonts_get_system_font(FONT_KEY_GOTHIC_14),
     GRect(foot_inset, foot_top, bounds.size.w - 2 * foot_inset, 18),
     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 
@@ -247,7 +268,10 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   GFont ff = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   int ft_top = (int)(PBL_IF_ROUND_ELSE(110, 116) * SY);
   int ft_h = 24;
-  char ntok[3][8]; bool nexp[3]; int nTok = 0;
+  // Static, not stack: hero_draw sits deep in the render call chain on a tiny app
+  // task stack; keeping its frame small avoids a stack overflow during the flip.
+  // Single-threaded, never reentrant, so shared storage is safe.
+  static char ntok[3][12]; static bool nexp[3]; int nTok = 0;   // [12]: holds any int, silences -Wformat-truncation
   for (int a = 1; a < D->n && nTok < 3; a++) {
     int m = (int)(b->epochBase + D->delta[a]) - (int)now; if (m < 0) m = 0;
     snprintf(ntok[nTok], sizeof(ntok[nTok]), "%d", m / 60);
@@ -259,7 +283,7 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
     int R = ft_h / 2;   // uniform diamond half-size — a true square, never stretched
     GSize lblsz = graphics_text_layout_get_content_size("NEXT", ff,
                     GRect(0, 0, 100, ft_h), GTextOverflowModeFill, GTextAlignmentLeft);
-    int tw[3], slot[3], total = lblsz.w + gap;
+    static int tw[3], slot[3]; int total = lblsz.w + gap;
     for (int t = 0; t < nTok; t++) {
       GSize s = graphics_text_layout_get_content_size(ntok[t], ff,
                   GRect(0, 0, 60, ft_h), GTextOverflowModeFill, GTextAlignmentLeft);
@@ -280,8 +304,9 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
       if (nexp[t]) {
         // A faint near-black diamond: just a whisper of an outline so the rider
         // can pick out the express without it shouting over the countdown.
-        GPoint qp[4] = { GPoint(cx, cy - R), GPoint(cx + R, cy),
-                         GPoint(cx, cy + R), GPoint(cx - R, cy) };
+        static GPoint qp[4];
+        qp[0] = GPoint(cx, cy - R); qp[1] = GPoint(cx + R, cy);
+        qp[2] = GPoint(cx, cy + R); qp[3] = GPoint(cx - R, cy);
         GPathInfo qi = { 4, qp };
         GPath *qg = gpath_create(&qi);
         graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite));
@@ -299,7 +324,9 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   graphics_context_set_text_color(ctx, GColorWhite);
   int st_inset = PBL_IF_ROUND_ELSE(34, 4);
   int st_top = (int)(PBL_IF_ROUND_ELSE(132, 138) * SY);
-  graphics_draw_text(ctx, b->station, sf, GRect(st_inset, st_top, bounds.size.w - 2 * st_inset, 34),
+  static char stn[40];
+  hero_station_strip(b->station, stn, sizeof stn);
+  graphics_draw_text(ctx, stn, sf, GRect(st_inset, st_top, bounds.size.w - 2 * st_inset, 34),
                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
 }
 
@@ -424,7 +451,7 @@ int hero_glyphs(GRect bounds, const Bundle *b, uint8_t line, uint8_t dir,
   GFont ff = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   int ft_top = (int)(PBL_IF_ROUND_ELSE(110, 116) * SY);
   int ft_h = 24;
-  char ntok[3][8]; bool nexp[3]; int nTok = 0;
+  char ntok[3][12]; bool nexp[3]; int nTok = 0;   // [12]: holds any int, silences -Wformat-truncation
   for (int a = 1; a < D->n && nTok < 3; a++) {
     int m = (int)(b->epochBase + D->delta[a]) - (int)now; if (m < 0) m = 0;
     snprintf(ntok[nTok], sizeof(ntok[nTok]), "%d", m / 60);
@@ -463,7 +490,9 @@ int hero_station_glyphs(GRect bounds, const char *station, HeroGlyph *out, int m
   GFont sf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
   int st_inset = PBL_IF_ROUND_ELSE(34, 4);
   int st_top = (int)(PBL_IF_ROUND_ELSE(132, 138) * SY);
-  return emit_chars(out, 0, max, station, sf, GColorWhite, GColorBlack,
+  static char stn[40];
+  hero_station_strip(station, stn, sizeof stn);   // match the footer hero_draw paints
+  return emit_chars(out, 0, max, stn, sf, GColorWhite, GColorBlack,
                     GRect(st_inset, st_top, bounds.size.w - 2 * st_inset, 34),
                     GTextAlignmentCenter, 4);
 }
@@ -475,29 +504,6 @@ GRect hero_station_rect(GRect bounds) {
   if (st_top + h > bounds.size.h) h = bounds.size.h - st_top;
   if (h < 0) h = 0;
   return GRect(0, st_top, bounds.size.w, h);
-}
-
-void hero_ghost_board(GContext *ctx, GRect bounds) {
-#if defined(PBL_COLOR)
-  uint8_t bg = GColorBlack.argb;
-  uint8_t hi = GColorLightGray.argb;   // bright ink (white text) ghosts to light grey
-  uint8_t lo = GColorDarkGray.argb;    // everything else collapses to dark grey
-  GBitmap *fb = graphics_capture_frame_buffer(ctx);
-  uint8_t *d = gbitmap_get_data(fb);
-  int st = gbitmap_get_bytes_per_row(fb);
-  for (int y = 0; y < bounds.size.h; y++) {
-    uint8_t *row = d + y * st;
-    for (int x = 0; x < bounds.size.w; x++) {
-      uint8_t p = row[x];
-      if (p == bg) continue;                       // leave the black field alone
-      int luma = ((p >> 4) & 3) + ((p >> 2) & 3) + (p & 3);  // 0..9
-      row[x] = (luma >= 6) ? hi : lo;
-    }
-  }
-  graphics_release_frame_buffer(ctx, fb);
-#else
-  (void)ctx; (void)bounds;
-#endif
 }
 
 GRect hero_flip_rect(GRect bounds) {

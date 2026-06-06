@@ -13,8 +13,10 @@
 #define PERSIST_NEAREST_POS 6
 #define PERSIST_SEEN_HELP   7
 #define PERSIST_VIEW        8   // packed (s_line << 8 | s_dir): last line+direction shown
+#define PERSIST_VIEWMEM     9   // per-station last line+direction table (see ViewMem)
 
 #define STALE_SECS 120   // data older than this is no longer trustworthy as "live"
+#define CONNECT_TIMEOUT_MS 20000  // no bundle/error in this window -> "Can't reach phone"
 
 // Upward warning triangle for the hero alert badge (16x14).
 static const GPathInfo WARN_TRI = { 3, (GPoint[]){ {8, 0}, {16, 14}, {0, 14} } };
@@ -25,7 +27,7 @@ static AppTimer *s_poll;
 static AppTimer *s_launch_settle = NULL;  // launch flip-in fallback (see launch_settle_cb)
 static Bundle s_bundle;
 static bool s_have_bundle = false;
-static int s_error = -1;        // -1 none; 0 ready; 1 no-loc; 2 bad-station; 3 offline; 4 no-trains
+static int s_error = -1;        // -1 none; 0 ready; 1 no-loc; 2 bad-station; 3 offline; 4 no-trains; 5 no-phone (watchdog)
 static uint8_t s_line = 0, s_dir = 0;
 // Per-line direction memory: each line remembers the direction you last viewed it
 // in, so scrolling away and back restores that line's own choice (line A stays
@@ -75,9 +77,38 @@ static void open_settings(ClickRecognizerRef r, void *c);
 static void open_manage(void);
 static void open_alerts(void);
 static void push_favsync(void);
+static void connect_timeout_cb(void *ctx);
 #ifdef MTA_DEBUG_STUB
 static void stub_arrive(void *ctx);
 #endif
+
+// Connection watchdog: if no bundle and no error land within CONNECT_TIMEOUT_MS
+// of asking, stop spinning and tell the user the phone is unreachable. Armed at
+// launch and on every refresh request; cancelled when real data or a definitive
+// error arrives. (s_connect_wd lives here so the arm/cancel helpers can see it.)
+static AppTimer *s_connect_wd = NULL;
+static void connect_wd_arm(void) {
+  if (s_connect_wd) app_timer_cancel(s_connect_wd);
+  s_connect_wd = app_timer_register(CONNECT_TIMEOUT_MS, connect_timeout_cb, NULL);
+}
+static void connect_wd_cancel(void) {
+  if (s_connect_wd) { app_timer_cancel(s_connect_wd); s_connect_wd = NULL; }
+}
+
+// Single source of truth for which screen the hero window is showing, so the
+// renderer (canvas_update) and the click handlers never disagree about whether
+// there's a live board to drive or an error/offline card to retry from.
+typedef enum { SCR_BOARD, SCR_LOADING, SCR_ERROR, SCR_OFFLINE } ScreenKind;
+static bool bundle_stale(void) {
+  return s_have_bundle && (int)(time(NULL) - (time_t)s_bundle.epochBase) > STALE_SECS;
+}
+static ScreenKind current_screen(void) {
+  if (s_error == 1 || s_error == 2 || s_error == 4 || s_error == 5) return SCR_ERROR;
+  if (s_error == 3 && !s_have_bundle)                               return SCR_ERROR;
+  if (s_switching || !s_have_bundle || loading_active())            return SCR_LOADING;
+  if (bundle_stale())                                               return SCR_OFFLINE;
+  return SCR_BOARD;
+}
 
 // Service-alerts screen.
 static Window     *s_alerts_win;
@@ -188,9 +219,30 @@ static void request_refresh(void) {
   app_timer_register(1500, stub_arrive, NULL);   // emulate the phone's feed reply
   return;
 #endif
+  connect_wd_arm();   // restart the unreachable-phone clock for this attempt
   s_tx_refresh = true; tx_pump();
 }
 static void push_favsync(void) { s_tx_favsync = true; tx_pump(); }
+
+// Watchdog fired: nothing came back in time. Stop the spinner and surface an
+// honest dead end -- "Can't reach phone" with no cache, or the Offline card if
+// we still have (stale) cached data. Either way the user can press to retry.
+static void connect_timeout_cb(void *ctx) {
+  s_connect_wd = NULL;
+  s_switching = false;
+  if (loading_active()) { loading_deinit(); load_stop(); }
+  if (!s_have_bundle) s_error = 5;   // else fall through to the stale Offline card
+  render_dispatch();
+}
+
+// Press-to-retry from any error/offline card: ask again and show the spinner.
+static void retry_connection(void) {
+  s_error = -1;
+  s_switching = true;
+  connect_wd_arm();
+  request_refresh();
+  render_dispatch();
+}
 
 static void outbox_sent(DictionaryIterator *it, void *ctx) { s_tx_busy = false; tx_pump(); }
 static void outbox_failed(DictionaryIterator *it, AppMessageResult r, void *ctx) {
@@ -597,9 +649,60 @@ static void ring_prev(ClickRecognizerRef r, void *c) {
   switch_to((uint8_t)((s_sel + rl - 1) % rl));
 }
 
+// Per-station view memory: remembers the line+direction last viewed at each
+// station, keyed by station id, so returning to a station reopens on the line you
+// left it at (rather than always snapping back to the top line). An MRU table of
+// the most recent VIEWMEM_MAX stations, persisted whole under PERSIST_VIEWMEM so
+// it survives app restarts. Covers favorites and the (GPS-varying) Nearest station
+// uniformly, since both resolve to a real station id.
+#define VIEWMEM_MAX 16
+typedef struct { char id[12]; uint8_t line; uint8_t dir; } ViewMem;
+static ViewMem s_viewmem[VIEWMEM_MAX];
+static uint8_t s_viewmem_n;
+
+static void viewmem_load(void) {
+  s_viewmem_n = 0;
+  if (!persist_exists(PERSIST_VIEWMEM)) return;
+  int sz = persist_read_data(PERSIST_VIEWMEM, s_viewmem, sizeof(s_viewmem));
+  if (sz <= 0) return;
+  int n = sz / (int)sizeof(ViewMem);
+  if (n > VIEWMEM_MAX) n = VIEWMEM_MAX;
+  s_viewmem_n = (uint8_t)n;
+}
+// Restore the remembered line+dir for `id` into *line/*dir. Defaults to the top
+// line (0,0) when the station has never been seen. Always returns true so callers
+// can branch cleanly; values are clamped to the bundle by clamp_view afterward.
+static void viewmem_get(const char *id, uint8_t *line, uint8_t *dir) {
+  for (uint8_t i = 0; i < s_viewmem_n; i++) {
+    if (strncmp(s_viewmem[i].id, id, sizeof(s_viewmem[i].id)) == 0) {
+      *line = s_viewmem[i].line; *dir = s_viewmem[i].dir; return;
+    }
+  }
+  *line = 0; *dir = 0;
+}
+// Record `id`'s current line+dir at the front of the MRU table and persist.
+static void viewmem_put(const char *id, uint8_t line, uint8_t dir) {
+  if (!id || !id[0]) return;
+  int at = -1;
+  for (uint8_t i = 0; i < s_viewmem_n; i++)
+    if (strncmp(s_viewmem[i].id, id, sizeof(s_viewmem[i].id)) == 0) { at = i; break; }
+  if (at >= 0) {
+    if (s_viewmem[at].line == line && s_viewmem[at].dir == dir && at == 0) return;  // unchanged
+  } else {
+    at = (s_viewmem_n < VIEWMEM_MAX) ? s_viewmem_n++ : VIEWMEM_MAX - 1;  // append or evict LRU
+  }
+  // Shift [0..at) down by one and place the entry at the front (MRU).
+  for (int i = at; i > 0; i--) s_viewmem[i] = s_viewmem[i - 1];
+  strncpy(s_viewmem[0].id, id, sizeof(s_viewmem[0].id) - 1);
+  s_viewmem[0].id[sizeof(s_viewmem[0].id) - 1] = 0;
+  s_viewmem[0].line = line; s_viewmem[0].dir = dir;
+  persist_write_data(PERSIST_VIEWMEM, s_viewmem, (size_t)s_viewmem_n * sizeof(ViewMem));
+}
+
 static void persist_view(void) {
   if (s_line < MAX_LINES) s_line_dir[s_line] = s_dir;  // remember this line's direction
   persist_write_int(PERSIST_VIEW, ((int)s_line << 8) | s_dir);
+  if (s_have_bundle) viewmem_put(s_bundle.id, s_line, s_dir);  // per-station memory
 }
 static void clamp_view(void) {
   if (!s_have_bundle || s_bundle.nLines == 0) { s_line = 0; s_dir = 0; return; }
@@ -692,6 +795,8 @@ static void bounce_start(int sign) {
 }
 
 static void next_line(ClickRecognizerRef r, void *c) {
+  ScreenKind sk = current_screen();
+  if (sk == SCR_ERROR || sk == SCR_OFFLINE) { retry_connection(); return; }   // no board to scroll: retry
   if (!s_have_bundle || s_bundle.nLines == 0) return;
   arrival_cancel();   // scrolling lines interrupts the gold wipe
   if (s_bundle.nLines <= 1) { bounce_start(+1); return; }   // one line: nudge, don't flip to self
@@ -709,6 +814,8 @@ static void next_line(ClickRecognizerRef r, void *c) {
   }
 }
 static void prev_line(ClickRecognizerRef r, void *c) {
+  ScreenKind sk = current_screen();
+  if (sk == SCR_ERROR || sk == SCR_OFFLINE) { retry_connection(); return; }   // no board to scroll: retry
   if (!s_have_bundle || s_bundle.nLines == 0) return;
   arrival_cancel();   // scrolling lines interrupts the gold wipe
   if (s_bundle.nLines <= 1) { bounce_start(-1); return; }   // one line: nudge up, don't flip to self
@@ -726,6 +833,8 @@ static void prev_line(ClickRecognizerRef r, void *c) {
   }
 }
 static void flip_dir(ClickRecognizerRef r, void *c) {
+  ScreenKind sk = current_screen();
+  if (sk == SCR_ERROR || sk == SCR_OFFLINE) { retry_connection(); return; }   // no board: retry
   if (!s_have_bundle) return;
   arrival_cancel();   // flipping direction interrupts the gold wipe
   bool outpaced = s_fast || transition_active();
@@ -783,7 +892,10 @@ static void launch_settle_cb(void *ctx) {
   if (!s_switching) return;          // fresh data already landed; nothing to rescue
   s_switching = false;
 #if defined(PBL_COLOR)
-  loading_land_current();            // settle the riffle onto the cached board
+  // Only riffle the cached board in if it's still live; a stale cache resolves to
+  // the Offline card instead of animating a dead board on as if it were fresh.
+  if (!bundle_stale()) loading_land_current();
+  else { loading_deinit(); load_stop(); }
 #endif
   render_dispatch();                 // b/w (no riffle): just reveal the cached board
 }
@@ -830,10 +942,13 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
     if (s_have_bundle) { strncpy(prev_id, s_bundle.id, sizeof(prev_id) - 1); prev_id[sizeof(prev_id) - 1] = '\0'; }
     if (bundle_decode(bun->value->data, bun->length, &s_bundle)) {
       s_have_bundle = true; s_error = -1;
+      connect_wd_cancel();   // live data landed; the phone is reachable
       if (s_launch_settle) { app_timer_cancel(s_launch_settle); s_launch_settle = NULL; }
       if (strcmp(prev_id, s_bundle.id) != 0) {
-        s_line = 0; s_dir = 0;                            // new station: start at the top
-        memset(s_line_dir, 0, sizeof(s_line_dir));        // and forget the old station's per-line directions
+        memset(s_line_dir, 0, sizeof(s_line_dir));        // forget the old station's per-line directions
+        viewmem_get(s_bundle.id, &s_line, &s_dir);        // reopen on the line+dir we left this station at
+        clamp_view();                                     // clamp to the fresh bundle
+        if (s_line < MAX_LINES) s_line_dir[s_line] = s_dir;  // seed the restored line's direction
       } else clamp_view();                                // same station refresh: keep the user's view
       s_switching = false;
       persist_write_data(PERSIST_BUNDLE, bun->value->data, bun->length);
@@ -844,9 +959,12 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
     }
   } else if (err) {
     int code = (int)err->value->uint8;
-    if (code == 0) { push_favsync(); request_refresh(); }
-    else {
+    if (code == 0) {
+      if (s_error == 5) s_error = -1;   // phone woke up; drop the watchdog dead end
+      push_favsync(); request_refresh();
+    } else {
       s_error = code; s_switching = false;
+      connect_wd_cancel();   // a verdict arrived; no need for the watchdog screen too
       if (loading_active() && !loading_landing()) { loading_deinit(); load_stop(); }
     }
   }
@@ -923,24 +1041,40 @@ static void canvas_update(Layer *layer, GContext *ctx) {
     if (transition_render(ctx, b, &s_bundle, time(NULL))) return;
   }
 
-  if (s_error == 1) { states_draw_message(ctx, b, "Location off", "Open settings to pick a station"); return; }
-  if (s_error == 2) { states_draw_message(ctx, b, "No station", "Couldn't find a station here"); return; }
-  if (s_error == 4) { states_draw_message(ctx, b, "No trains", "Nothing scheduled right now"); return; }
-  if (s_error == 3 && !s_have_bundle) { states_draw_message(ctx, b, "Offline", "Can't reach phone"); return; }
+  switch (current_screen()) {
+    case SCR_ERROR:
+      switch (s_error) {
+        case 1: states_draw_message(ctx, b, "No location", "Check Location Services, or pick a station"); break;
+        case 2: states_draw_message(ctx, b, "No station", "Couldn't find a station here"); break;
+        case 4: states_draw_message(ctx, b, "No trains", "Nothing scheduled right now"); break;
+        case 5: states_draw_message(ctx, b, "No phone", "Check Bluetooth, then press to retry"); break;
+        default: states_draw_message(ctx, b, "No data", "Couldn't load trains - press to retry"); break;  // offline, no cache
+      }
+      return;
 
-  // Departure-board loading interstitial: a ring switch in flight, or a cold
-  // start with no data yet. Once the bundle lands the riffle keeps settling
-  // (loading_active stays true) until every cell has reached its real value.
-  if (s_switching || !s_have_bundle || loading_active()) {
+    case SCR_LOADING:
+      // Departure-board loading interstitial: a ring switch in flight, or a cold
+      // start with no data yet. Once the bundle lands the riffle keeps settling
+      // (loading_active stays true) until every cell has reached its real value.
 #if defined(PBL_COLOR)
-    loading_begin(b, ring_is_nearest(s_sel));
-    load_start();
-    loading_render(ctx, b, time(NULL));
+      loading_begin(b, ring_is_nearest(s_sel));
+      load_start();
+      loading_render(ctx, b, time(NULL));
 #else  // no Solari interstitial on b/w: a plain status message
-    states_draw_message(ctx, b, ring_is_nearest(s_sel) ? "Locating" : "Loading",
-                        s_have_bundle ? "Updating arrivals" : "Getting trains");
+      states_draw_message(ctx, b, ring_is_nearest(s_sel) ? "Locating" : "Loading",
+                          s_have_bundle ? "Updating arrivals" : "Getting trains");
 #endif
-    return;
+      return;
+
+    case SCR_OFFLINE:
+      // Cached data has gone stale: show an honest offline card instead of a
+      // ghosted board whose grey roundel + countdown could pass for a live train.
+      states_draw_offline(ctx, b, s_bundle.station,
+                          (int)(time(NULL) - (time_t)s_bundle.epochBase) / 60);
+      return;
+
+    case SCR_BOARD:
+      break;
   }
 
   hero_draw(ctx, b, &s_bundle, s_line, s_dir, time(NULL));
@@ -972,18 +1106,6 @@ static void canvas_update(Layer *layer, GContext *ctx) {
       GRect(bx, by + 1, 16, 15), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
 
-  // Offline with cached data: keep showing arrivals, badge them stale if old.
-  if (s_error == 3 && (int)(time(NULL)) - (int)s_bundle.epochBase > STALE_SECS) {
-    graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorYellow, GColorWhite));
-    graphics_draw_text(ctx, "STALE", fonts_get_system_font(FONT_KEY_GOTHIC_14),
-      GRect(0, 2, b.size.w - 4, 16), GTextOverflowModeFill, GTextAlignmentRight, NULL);
-  }
-
-  // Stale data: ghost the whole board (and its chrome) to grey so a no-longer-live
-  // countdown can't be mistaken for current. Last, so everything drained uniformly.
-  if ((int)(time(NULL) - (time_t)s_bundle.epochBase) > STALE_SECS) {
-    hero_ghost_board(ctx, b);
-  }
 }
 static void window_load(Window *w) {
   Layer *root = window_get_root_layer(w);
@@ -1137,14 +1259,17 @@ static void publish_glance(void) {
   }
   if (best == 0) { app_glance_reload(NULL, NULL); return; }
   int mins = (int)(best - now) / 60;
-  if (mins <= 0) snprintf(s_glance_buf, sizeof(s_glance_buf), "%s · Now — %s", blabel, s_bundle.station);
-  else           snprintf(s_glance_buf, sizeof(s_glance_buf), "%s · %d min — %s", blabel, mins, s_bundle.station);
+  char stn[40];
+  hero_station_strip(s_bundle.station, stn, sizeof stn);   // drop the "(lines)" list
+  if (mins <= 0) snprintf(s_glance_buf, sizeof(s_glance_buf), "%s · Now — %s", blabel, stn);
+  else           snprintf(s_glance_buf, sizeof(s_glance_buf), "%s · %d min — %s", blabel, mins, stn);
   s_glance_exp = best;
   app_glance_reload(glance_reload_cb, NULL);
 }
 
 static void init(void) {
   favorites_load();
+  viewmem_load();
   s_nearest_pos = persist_exists(PERSIST_NEAREST_POS)
     ? (uint8_t)persist_read_int(PERSIST_NEAREST_POS) : 0;
   if (s_nearest_pos == 255) {                  // migrate legacy "off" -> permanent on
@@ -1207,6 +1332,9 @@ static void init(void) {
 
   tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
   s_poll = app_timer_register(30000, poll_cb, NULL);
+#ifndef MTA_DEBUG_STUB
+  connect_wd_arm();   // a silent phone (slow JS / disconnected) must not spin forever
+#endif
 
   // First launch: show the controls card on top of the hero.
   if (!persist_read_bool(PERSIST_SEEN_HELP)) window_stack_push(s_help, true);
@@ -1215,6 +1343,7 @@ static void deinit(void) {
   publish_glance();
   tick_timer_service_unsubscribe();
   if (s_poll) app_timer_cancel(s_poll);
+  connect_wd_cancel();
   window_destroy(s_window);
   window_destroy(s_settings);
   window_destroy(s_manage);

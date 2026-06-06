@@ -38,6 +38,19 @@ test('nearestStation can return a standalone PATH station when closest', () => {
   assert.strictEqual(s.id, '26732');
 });
 
+test('nearestStation defaults to Times Sq when far outside the service area', () => {
+  const la = nearestStation(34.0522, -118.2437);   // Los Angeles
+  assert.strictEqual(la.name, 'Times Sq-42 St');
+  const london = nearestStation(51.5074, -0.1278); // London, too
+  assert.strictEqual(london.id, 'R16');
+});
+
+test('nearestStation still returns a real nearby station inside the area', () => {
+  // ~30 km out on Long Island is still within the service radius, not Times Sq.
+  const li = nearestStation(40.7900, -73.6000);
+  assert.notStrictEqual(li.id, 'R16');
+});
+
 test('displayName tags a pure PATH station but not a merged subway one', () => {
   assert.strictEqual(displayName(getStation('26733')), 'Newark · PATH');
   const u14 = getStation('132');                    // 14 St, merged with PATH
