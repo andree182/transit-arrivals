@@ -121,7 +121,8 @@ var REGISTRY = {
   wmata: proxied.makeProxiedAgency({ id: 'wmata', name: 'Metro' }),
   marta: proxied.makeProxiedAgency({ id: 'marta', name: 'MARTA' }),
   bart: proxied.makeProxiedAgency({ id: 'bart', name: 'BART' }),
-  mbta: proxied.makeProxiedAgency({ id: 'mbta', name: 'MBTA' })
+  mbta: proxied.makeProxiedAgency({ id: 'mbta', name: 'MBTA' }),
+  septa: proxied.makeProxiedAgency({ id: 'septa', name: 'SEPTA' })
 };
 function get(id) { return REGISTRY[id] || MTA; }   // default to MTA for legacy favorites
 
