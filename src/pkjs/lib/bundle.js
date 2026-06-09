@@ -1,5 +1,32 @@
+// Encode a JS string to UTF-8 bytes. charCodeAt-&-0xff truncates multi-byte
+// code points to a single Latin-1 byte (e.g. "·" U+00B7 -> a lone 0xB7), which
+// is invalid UTF-8 and makes the watch's graphics_draw_text drop the whole string
+// (the station footer's "· CTA"/"· Metro" suffix). Emit real UTF-8 instead.
+function utf8Bytes(s) {
+  var out = [];
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xC0 | (c >> 6), 0x80 | (c & 0x3F));
+    else out.push(0xE0 | (c >> 12), 0x80 | ((c >> 6) & 0x3F), 0x80 | (c & 0x3F));
+  }
+  return out;
+}
 function putStr(arr, s, n) {
-  for (var i = 0; i < n; i++) arr.push(i < s.length ? (s.charCodeAt(i) & 0xff) : 0);
+  var b = utf8Bytes(String(s == null ? '' : s));
+  if (b.length > n) {
+    b = b.slice(0, n);
+    // Don't leave a partial multi-byte sequence at the cut: drop trailing
+    // continuation bytes, then a now-incomplete lead byte.
+    var i = b.length;
+    while (i > 0 && (b[i - 1] & 0xC0) === 0x80) i--;
+    if (i > 0 && (b[i - 1] & 0x80)) {
+      var lead = b[i - 1], need = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+      if (b.length - (i - 1) < need) i--;
+    }
+    b = b.slice(0, i);
+  }
+  for (var k = 0; k < n; k++) arr.push(k < b.length ? b[k] : 0);
 }
 function putU16(arr, v) { v = v < 0 ? 0 : (v > 65535 ? 65535 : v); arr.push(v & 0xff, (v >> 8) & 0xff); }
 function putU32(arr, v) { arr.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff); }

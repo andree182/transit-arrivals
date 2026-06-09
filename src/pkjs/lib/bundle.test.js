@@ -137,3 +137,14 @@ test('multi-direction line encodes second direction at correct offset', () => {
   const EXP_2 = N_ARR_2 + 1 + 2;
   assert.strictEqual(bytes[EXP_2], 1);
 });
+
+test('encodes a non-ASCII station name (middle dot) as valid UTF-8', () => {
+  // "Jackson/Library · CTA" — the "·" (U+00B7) must encode as 0xC2 0xB7, not a
+  // lone 0xB7 (invalid UTF-8 that makes the watch drop the whole footer).
+  const bytes = encodeBundle('40070', 'Jackson/Library · CTA', [
+    { line: 'Rd', color: [1, 2, 3], directions: [{ label: '', dest: 'X', times: [1000], exp: [false] }] }
+  ], 1000);
+  // station field is 39 bytes at offset 5 (version 1 + epoch 4). "Jackson/Library " = 16 bytes.
+  assert.strictEqual(bytes[5 + 16], 0xc2);   // middle-dot lead byte
+  assert.strictEqual(bytes[5 + 17], 0xb7);   // middle-dot continuation byte
+});
