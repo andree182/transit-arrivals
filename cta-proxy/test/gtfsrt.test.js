@@ -31,3 +31,11 @@ test('extractAlerts returns header text and informed route ids', () => {
   expect(withRoute.header.length).toBeGreaterThan(0);
   expect(typeof withRoute.effect).toBe('number');
 });
+
+test('extractAlerts reads route_id from EntitySelector field 2 (SEPTA layout)', () => {
+  const alerts = extractAlerts(alBuf);
+  // Live SEPTA capture: at least one alert must carry a rail/trolley route id.
+  const labels = new Set();
+  for (const a of alerts) for (const r of a.routeIds) labels.add(r);
+  expect([...labels].some(r => /^(M1|T[1-5]|G1|D[12]|L1|B[1-3])$/.test(r))).toBe(true);
+});
