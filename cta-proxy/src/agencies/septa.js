@@ -56,7 +56,7 @@ export function naiveParse(s) {
 
 // Parse the dynamic-key "... Departures: Month D, YYYY, h:mm am/pm" -> naive seconds.
 function parseKeyTime(key) {
-  const m = /Departures:\s*([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4}),\s*(\d{1,2}):(\d{2})\s*(am|pm)/i.exec(String(key || ''));
+  const m = /Departures:\s*([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4}),\s*(\d{1,2}):(\d{2})\s*(am|pm)\b/i.exec(String(key || ''));
   if (!m) return null;
   const MONTHS = { january:0, february:1, march:2, april:3, may:4, june:5, july:6,
                    august:7, september:8, october:9, november:10, december:11 };
@@ -155,6 +155,7 @@ export function elLines(labels) {
 }
 
 // Concatenate per-mode models; first occurrence of a label wins.
+// RR labels are 2-char (WT, AI, …); RT/el labels are 1-char (M,T,L,B,G,D) — disjoint, so first-wins never suppresses a real line.
 export function mergeModels(...models) {
   const seen = new Set();
   const out = [];
@@ -172,7 +173,7 @@ const RT_TRIP_URL = 'https://www3.septa.org/gtfsrt/septa-pa-us/Trip/rtTripUpdate
 
 function rrUrl(name) {
   return 'https://www3.septa.org/api/Arrivals/index.php?station=' +
-    encodeURIComponent(name) + '&results=6';
+    encodeURIComponent(name) + '&results=20';
 }
 
 // Pure-ish: given a fan-out entry, mode fetchers, stop names, and now -> merged model.
@@ -219,12 +220,13 @@ export function transformAlerts(alerts, wantLabels) {
   const want = new Set(wantLabels || []);
   const out = { alerts: [], suspensions: [] };
   const seenSusp = new Set();
+  const seenHeader = new Set();
   for (const a of (Array.isArray(alerts) ? alerts : [])) {
     const labels = [...new Set((a.routeIds || []).map(labelForRoute).filter(Boolean))];
     const hit = labels.filter(l => want.has(l));
     if (!hit.length) continue;
     const header = a.header || '';
-    if (header) out.alerts.push(header);
+    if (header && !seenHeader.has(header)) { seenHeader.add(header); out.alerts.push(header); }
     const isSuspension = a.effect === EFFECT_NO_SERVICE || /suspend|no service/i.test(header);
     if (isSuspension) {
       for (const l of hit) {

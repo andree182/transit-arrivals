@@ -7,6 +7,7 @@ var path = require('path');
 var execFileSync = require('child_process').execFileSync;
 
 // Metro/trolley/NHSL routes we query for stops. el:true => El/BSL (no live arrivals).
+// B2 omitted: SEPTA Stops API returns no stops for it; ROUTE_MAP still recognizes B2 trips if service resumes.
 var ROUTES = [
   { route: 'L1', label: 'L', el: true },
   { route: 'B1', label: 'B', el: true },
@@ -179,6 +180,7 @@ function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 // Minimal CSV line splitter (handles quoted fields).
 function parseCSV(text) {
   var lines = text.split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [];
   var head = splitCSVLine(lines[0]);
   return lines.slice(1).map(function (l) {
     var cells = splitCSVLine(l), row = {};
