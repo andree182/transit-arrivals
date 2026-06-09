@@ -40,6 +40,23 @@ test('escapes a label that tries to break out of the script island', () => {
   assert.ok(html.indexOf('<\\/script><img') >= 0, 'breakout sequence is escaped');
 });
 
+test('uses neutral multi-agency branding (not MTA-specific)', () => {
+  const html = buildConfigHtml(0, [], DB);
+  assert.match(html, /<header>Transit Favorites<\/header>/);
+  assert.ok(html.indexOf('>MTA Favorites<') < 0, 'no MTA-specific header text');
+});
+
+test('embeds agency and a city map so results can show NYC vs Chicago', () => {
+  const db = [
+    { id: 'R16', name: 'Times Sq', lines: ['Q'], agency: 'mta' },
+    { id: '40380', name: 'Clark/Lake', lines: ['Bl', 'Br'], agency: 'cta' },
+  ];
+  const html = buildConfigHtml(0, [], db);
+  const embedded = extractJson(html, 'station-db');
+  assert.strictEqual(embedded[1].agency, 'cta');             // agency passed through to the picker
+  assert.match(html, /CITY=\{mta:"NYC",cta:"Chicago"\}/);    // city-label map present in the client JS
+});
+
 test('produces a complete HTML document', () => {
   const html = buildConfigHtml(255, [], DB);
   assert.match(html, /^<!DOCTYPE html>/);

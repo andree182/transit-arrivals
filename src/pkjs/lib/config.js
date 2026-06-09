@@ -11,7 +11,7 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
   return '<!DOCTYPE html>\n' +
 '<html><head><meta charset="utf-8">' +
 '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-'<title>MTA Favorites</title><style>' +
+'<title>Transit Favorites</title><style>' +
 'body{font-family:-apple-system,Helvetica,Arial,sans-serif;margin:0;background:#111;color:#eee}' +
 'header{background:#0a84ff;color:#fff;padding:14px 16px;font-size:18px;font-weight:600}' +
 'section{padding:12px 16px}h2{font-size:13px;text-transform:uppercase;color:#9aa;margin:8px 0}' +
@@ -25,7 +25,7 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 '#save{position:sticky;bottom:0;width:100%;border:0;background:#0a84ff;color:#fff;padding:16px;font-size:17px;font-weight:600}' +
 '.hint{color:#888;font-size:12px;padding:0 16px 8px}' +
 '</style></head><body>' +
-'<header>MTA Favorites</header>' +
+'<header>Transit Favorites</header>' +
 '<section><h2>Your stations</h2><div id="favs"></div>' +
 '<div class="hint" id="cap"></div></section>' +
 '<section><h2>Add a station</h2>' +
@@ -39,6 +39,8 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 'var state=JSON.parse(document.getElementById("init-state").textContent);' +
 'var DB=JSON.parse(document.getElementById("station-db").textContent);' +
 'function disp(s){return s.name+(s.lines&&s.lines.length?" ("+s.lines.join("")+")":"");}' +
+'var CITY={mta:"NYC",cta:"Chicago"};' +
+'function cityTag(s){return CITY[s.agency]?" \\u00b7 "+CITY[s.agency]:"";}' +
 'function getReturn(){var m=location.search.match(/return_to=([^&]+)/);return m?decodeURIComponent(m[1]):"pebblejs://close#";}' +
 'function renderFavs(){' +
 'var c=document.getElementById("favs");c.innerHTML="";' +
@@ -61,7 +63,7 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 'var ul=document.getElementById("results");ul.innerHTML="";if(!q){return;}' +
 'var ql=q.toLowerCase(),shown=0;' +
 'for(var k=0;k<DB.length&&shown<25;k++){var s=DB[k];if(s.name.toLowerCase().indexOf(ql)<0)continue;' +
-'(function(st){var li=document.createElement("li");li.textContent=disp(st);' +
+'(function(st){var li=document.createElement("li");li.textContent=disp(st)+cityTag(st);' +
 'li.onclick=function(){add(st);};ul.appendChild(li);})(s);shown++;}' +
 '}' +
 'function add(st){' +

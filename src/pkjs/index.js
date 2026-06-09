@@ -69,7 +69,7 @@ Pebble.addEventListener('appmessage', function (e) {
 Pebble.addEventListener('showConfiguration', function () {
   var m = loadMirror();
   var db = stations._db.map(function (s) {
-    return { id: s.id, name: s.name, lines: s.lines };
+    return { id: s.id, name: s.name, lines: s.lines, agency: s.agency };
   });
   var html = config.buildConfigHtml(m.nearestPos, m.favs, db);
   Pebble.openURL('data:text/html,' + encodeURIComponent(html));
