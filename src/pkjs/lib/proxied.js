@@ -33,7 +33,7 @@ function makeProxiedAgency(meta) {
       if (!model.length) return cb(4);
       cb(null, {
         epoch: arrData.epoch,
-        station: { id: station.id, name: station.name + ' · ' + meta.name, agency: meta.id },
+        station: { id: station.id, name: station.name, agency: meta.id },
         model: model, alerts: alerts, suspensions: suspensions
       });
     }

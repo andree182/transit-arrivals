@@ -79,7 +79,12 @@ static void seed_builtin(void) {
   L0->nDirs = 1;
   DirView *D = &L0->dirs[0];
   strncpy(D->dest, "LOADING", sizeof(D->dest) - 1);
-  D->dirLabel[0] = 0; D->n = 3; D->expMask = 0;
+  // A space (not empty) direction label: keeps row 0 reserved so the riffling
+  // headsign sits at its normal lower position, leaving the row-0 band clear for
+  // the LOADING status text. An empty label rides the headsign up under LOADING
+  // (hero_glyphs: hdr_top = dir_top + (dlabel ? 14 : 2)); the space draws nothing
+  // and the row is skipped during the cold riffle anyway.
+  strcpy(D->dirLabel, " "); D->n = 3; D->expMask = 0;
   D->delta[0] = 12 * 60; D->delta[1] = 5 * 60; D->delta[2] = 9 * 60;
 }
 

@@ -29,7 +29,7 @@ test('getArrivals assembles the common model from proxy responses', () => new Pr
   });
   cta.getArrivals(STATION, function (err, res) {
     assert.strictEqual(err, null);
-    assert.deepStrictEqual(res.station, { id: '40380', name: 'Clark/Lake · CTA', agency: 'cta' });
+    assert.deepStrictEqual(res.station, { id: '40380', name: 'Clark/Lake', agency: 'cta' });
     assert.strictEqual(res.epoch, 1000);
     assert.strictEqual(res.model[0].line, 'Bl');
     assert.deepStrictEqual(res.alerts, ['Blue Line: heads up']);

@@ -350,17 +350,29 @@ static int emit_chars(HeroGlyph *out, int n, int max, const char *s, GFont f,
 
   char buf[40];
   int prevw = 0;
-  for (size_t i = 0; i < len && i < sizeof(buf) - 1 && n < max; i++) {
-    memcpy(buf, s, i + 1); buf[i + 1] = 0;
+  // Advance by whole UTF-8 characters, not bytes: a riffle cell holds a single
+  // char and draws it via graphics_draw_text, so a lone byte from a multi-byte
+  // sequence (e.g. the "·" in "Jackson/Library · CTA", 0xC2 0xB7) would be
+  // invalid UTF-8 and fault the firmware text layout. Multi-byte chars get no
+  // riffle cell — the static hero_draw paints them once the board lands — but we
+  // still consume their full width so the following glyphs stay aligned.
+  for (size_t i = 0; i < len && i < sizeof(buf) - 1 && n < max; ) {
+    unsigned char lead = (unsigned char)s[i];
+    int clen = lead < 0x80 ? 1 : lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+    if (i + (size_t)clen > len) clen = 1;        // truncated tail: treat as one byte
+    size_t end = i + clen;
+    if (end > sizeof(buf) - 1) break;            // would split the boundary buffer
+    memcpy(buf, s, end); buf[end] = 0;           // always ends on a char boundary
     GSize ps = graphics_text_layout_get_content_size(buf, f,
                  GRect(0, 0, 400, line_h + 8), GTextOverflowModeFill, GTextAlignmentLeft);
     int curw = ps.w;
-    if (s[i] != ' ') {
+    if (clen == 1 && s[i] != ' ') {              // only ASCII glyphs riffle
       HeroGlyph *g = &out[n++];
       g->cell = GRect(startx + prevw, box.origin.y, curw - prevw, line_h);
       g->ch = s[i]; g->font = f; g->fg = fg; g->bg = bg; g->row = row; g->kind = HG_TEXT;
     }
     prevw = curw;
+    i = end;
   }
   return n;
 }
