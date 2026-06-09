@@ -34,6 +34,21 @@ function pushArrival(byLabel, label, dirKey, dest, time) {
   if (time < b._min) { b._min = time; b.dest = dest || b.dest; }
 }
 
+// trips: extractTripUpdates output. stopIds: Set of this station's GTFS stop ids.
+// tripMap: { tripId: {c:label, h:headsign, d:0|1} }. Joins color/dir/dest the RT feed lacks.
+export function transformRT(trips, stopIds, tripMap, now) {
+  const byLabel = new Map();
+  for (const t of (Array.isArray(trips) ? trips : [])) {
+    const meta = tripMap[t.tripId];
+    if (!meta || !meta.c) continue;                        // unknown/stale trip -> skip
+    const stop = t.stops.find(s => stopIds.has(s.stopId));
+    if (!stop) continue;                                   // trip doesn't serve this station
+    const time = Math.max(stop.time, now);                 // clamp past to now
+    pushArrival(byLabel, meta.c, String(meta.d), meta.h, time);
+  }
+  return { epoch: now, model: buildModel(byLabel) };
+}
+
 // etdJson: parsed etd.aspx JSON. Groups estimates by line color, splits by direction.
 export function transformETD(etdJson, now) {
   const stations = etdJson?.root?.station;

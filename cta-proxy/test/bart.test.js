@@ -30,3 +30,24 @@ test('transformETD groups by line color, splits direction, Leaving->now, drops c
   expect(gn.directions[0].times).toEqual([NOW]);            // "Leaving" -> now
   expect(gn.directions[0].dest).toBe('Daly City');
 });
+
+test('transformRT colors/directions trips via the trip map, filtered to station stops', () => {
+  // extractTripUpdates output shape: [{ tripId, stops:[{stopId,time}] }]
+  const trips = [
+    { tripId: 't-yellow-n', stops: [{ stopId: 'A70-1', time: NOW + 300 }, { stopId: 'A80-1', time: NOW + 600 }] },
+    { tripId: 't-green-s',  stops: [{ stopId: 'A70-2', time: NOW + 120 }] },
+    { tripId: 't-unknown',  stops: [{ stopId: 'A70-1', time: NOW + 90 }] }   // not in map -> skipped (stale)
+  ];
+  const tripMap = {
+    't-yellow-n': { c: 'Yl', h: 'Antioch', d: 0 },
+    't-green-s':  { c: 'Gn', h: 'Daly City', d: 1 }
+  };
+  const stopIds = new Set(['A70-1', 'A70-2']);   // MONT platforms
+  const { model } = transformRT(trips, stopIds, tripMap, NOW);
+  const yl = model.find(l => l.line === 'Yl');
+  expect(yl.directions[0].dest).toBe('Antioch');
+  expect(yl.directions[0].times).toEqual([NOW + 300]);     // only the MONT stop time
+  const gn = model.find(l => l.line === 'Gn');
+  expect(gn.directions[0].times).toEqual([NOW + 120]);
+  expect(model.some(l => l.directions.some(d => d.times.includes(NOW + 90)))).toBe(false); // unknown trip dropped
+});
