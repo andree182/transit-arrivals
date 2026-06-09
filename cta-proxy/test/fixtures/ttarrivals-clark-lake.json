@@ -1,0 +1,13 @@
+{
+  "ctatt": {
+    "tmst": "2024-07-01T12:00:00",
+    "errCd": "0",
+    "errNm": null,
+    "eta": [
+      { "staId": "40380", "stpId": "30375", "staNm": "Clark/Lake", "stpDe": "Service toward O'Hare", "rn": "801", "rt": "Blue", "destSt": "30171", "destNm": "O'Hare", "trDr": "1", "prdt": "2024-07-01T12:00:00", "arrT": "2024-07-01T12:03:00", "isApp": "0", "isSch": "0", "isDly": "0", "isFlt": "0", "flags": null },
+      { "staId": "40380", "stpId": "30375", "staNm": "Clark/Lake", "stpDe": "Service toward O'Hare", "rn": "808", "rt": "Blue", "destSt": "30171", "destNm": "O'Hare", "trDr": "1", "prdt": "2024-07-01T12:00:00", "arrT": "2024-07-01T12:10:00", "isApp": "0", "isSch": "0", "isDly": "0", "isFlt": "0", "flags": null },
+      { "staId": "40380", "stpId": "30374", "staNm": "Clark/Lake", "stpDe": "Service toward Forest Park", "rn": "810", "rt": "Blue", "destSt": "30077", "destNm": "Forest Park", "trDr": "5", "prdt": "2024-07-01T12:00:00", "arrT": "2024-07-01T12:01:00", "isApp": "1", "isSch": "0", "isDly": "0", "isFlt": "0", "flags": null },
+      { "staId": "40380", "stpId": "30074", "staNm": "Clark/Lake", "stpDe": "Service toward Loop", "rn": "405", "rt": "Brn", "destSt": "30182", "destNm": "Loop", "trDr": "5", "prdt": "2024-07-01T12:00:00", "arrT": "2024-07-01T12:07:00", "isApp": "0", "isSch": "0", "isDly": "0", "isFlt": "0", "flags": null }
+    ]
+  }
+}
