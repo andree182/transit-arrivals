@@ -22,3 +22,8 @@ export async function fetchJSON(url, init) {
   return r.json();
 }
 export function nowSecs() { return Math.floor(Date.now() / 1000); }
+export async function fetchBuf(url, init) {
+  const r = await fetch(url, { ...(init || {}), cf: { cacheTtl: 0 } });
+  if (!r.ok) throw new Error('upstream ' + r.status);
+  return new Uint8Array(await r.arrayBuffer());
+}
