@@ -51,3 +51,16 @@ test('transformRT colors/directions trips via the trip map, filtered to station 
   expect(gn.directions[0].times).toEqual([NOW + 120]);
   expect(model.some(l => l.directions.some(d => d.times.includes(NOW + 90)))).toBe(false); // unknown trip dropped
 });
+
+const BSA = { root: { bsa: [
+  { '@id': '1', type: 'EMERGENCY', sms_text: { '#cdata-section': 'No delays reported.' } },
+  { '@id': '2', type: 'DELAY', sms_text: { '#cdata-section': 'Major delay: Antioch line service suspended near Bay Fair.' } }
+] } };
+
+test('transformAlerts uses sms_text, drops the no-delays sentinel, flags suspension', () => {
+  const out = transformAlerts(BSA);
+  expect(out.alerts.some(a => /Bay Fair/.test(a))).toBe(true);
+  expect(out.alerts.some(a => /No delays/.test(a))).toBe(false);
+  const s = out.suspensions.find(s => s.line === 'BART');
+  expect(s && s.color).toEqual([176, 190, 199]);
+});

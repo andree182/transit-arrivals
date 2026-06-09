@@ -34,6 +34,26 @@ function pushArrival(byLabel, label, dirKey, dest, time) {
   if (time < b._min) { b._min = time; b.dest = dest || b.dest; }
 }
 
+function cdata(x) { return (x && (x['#cdata-section'] ?? x['#text'])) || (typeof x === 'string' ? x : ''); }
+
+// bsaJson: parsed bsa.aspx JSON. Returns { alerts, suspensions }. routes ignored (advisories are system-wide).
+export function transformAlerts(bsaJson) {
+  const list = bsaJson?.root?.bsa;
+  const arr = Array.isArray(list) ? list : (list ? [list] : []);
+  const out = { alerts: [], suspensions: [] };
+  let suspended = false;
+  for (const b of arr) {
+    const text = cdata(b.sms_text) || cdata(b.description);
+    if (!text || /no delays reported/i.test(text)) continue;
+    out.alerts.push(text);
+    if (!suspended && /suspend|closed|no service|major delay/i.test(text)) {
+      suspended = true;
+      out.suspensions.push({ line: 'BART', color: colorForLabel('Gy'), reason: text });
+    }
+  }
+  return out;
+}
+
 // trips: extractTripUpdates output. stopIds: Set of this station's GTFS stop ids.
 // tripMap: { tripId: {c:label, h:headsign, d:0|1} }. Joins color/dir/dest the RT feed lacks.
 export function transformRT(trips, stopIds, tripMap, now) {
