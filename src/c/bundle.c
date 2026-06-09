@@ -6,8 +6,13 @@ static uint32_t rd_u32(const uint8_t *p) {
 }
 static uint16_t rd_u16(const uint8_t *p) { return (uint16_t)p[0] | ((uint16_t)p[1] << 8); }
 
+// v3–v5 bundles encode direction as a 1-byte borough code; v6 carries the word
+// directly. This maps the legacy code so a stale cached v3–v5 bundle still shows
+// the right word after an app update.
+static const char *const LEGACY_DIR_WORD[] = { "MANHATTAN", "BROOKLYN", "QUEENS", "BRONX", "" };
+
 bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
-  if (len < 56 || p[0] < 3 || p[0] > 5) return false;
+  if (len < 56 || p[0] < 3 || p[0] > 6) return false;
   size_t i = 0;
   out->version = p[i++];
   out->epochBase = rd_u32(p + i); i += 4;
@@ -33,9 +38,16 @@ bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
     if (L->nDirs > MAX_DIRS) L->nDirs = MAX_DIRS;
     for (int d = 0; d < L->nDirs; d++) {
       DirView *D = &L->dirs[d];
-      if (i + 22 > len) return false;
+      if (i + 21 > len) return false;
       memcpy(D->dest, p + i, 20); D->dest[20] = 0; i += 20;
-      D->dir = p[i++];
+      if (out->version >= 6) {
+        if (i + 10 > len) return false;
+        memcpy(D->dirLabel, p + i, 10); D->dirLabel[10] = 0; i += 10;
+      } else {
+        uint8_t code = p[i++];                 // legacy 1-byte borough code
+        if (code > 4) code = 4;
+        strcpy(D->dirLabel, LEGACY_DIR_WORD[code]);
+      }
       D->n = p[i++];
       if (D->n > MAX_ARR) D->n = MAX_ARR;
       if (i + (size_t)D->n * 2 > len) return false;
