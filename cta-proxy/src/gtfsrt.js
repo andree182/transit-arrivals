@@ -43,3 +43,36 @@ export function extractTripUpdates(buf) {
   }
   return trips;
 }
+
+// One row per alert: { routeIds:[], stopIds:[], header, effect }.
+export function extractAlerts(buf) {
+  const out = [];
+  for (const ent of readFields(buf, 0, buf.length)) {
+    if (ent.fieldNum !== 2 || ent.wireType !== 2) continue;           // FeedMessage.entity
+    for (const f of readFields(buf, ent.start, ent.end)) {
+      if (f.fieldNum !== 5 || f.wireType !== 2) continue;             // FeedEntity.alert
+      const routeIds = [], stopIds = [];
+      let header = '', effect = 0;
+      for (const af of readFields(buf, f.start, f.end)) {
+        if (af.fieldNum === 5 && af.wireType === 2) {                 // informed_entity (EntitySelector)
+          for (const ef of readFields(buf, af.start, af.end)) {
+            if (ef.fieldNum === 2 && ef.wireType === 2) routeIds.push(utf8(buf, ef.start, ef.end));     // route_id
+            else if (ef.fieldNum === 5 && ef.wireType === 2) stopIds.push(utf8(buf, ef.start, ef.end)); // stop_id
+          }
+        } else if (af.fieldNum === 7 && af.wireType === 0) {          // effect
+          effect = af.value;
+        } else if (af.fieldNum === 10 && af.wireType === 2 && !header) { // header_text (TranslatedString)
+          for (const tf of readFields(buf, af.start, af.end)) {
+            if (tf.fieldNum === 1 && tf.wireType === 2) {             // translation
+              for (const sf of readFields(buf, tf.start, tf.end)) {
+                if (sf.fieldNum === 1 && sf.wireType === 2 && !header) header = utf8(buf, sf.start, sf.end);
+              }
+            }
+          }
+        }
+      }
+      out.push({ routeIds, stopIds, header, effect });
+    }
+  }
+  return out;
+}

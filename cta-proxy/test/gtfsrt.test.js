@@ -22,3 +22,14 @@ test('extractTripUpdates surfaces at least one known SEPTA rail route', () => {
   // M1 (NHSL) or a trolley route should be present in a live capture
   expect([...routes].some(r => /^(M1|T[1-5]|G1|D[12])$/.test(r || ''))).toBe(true);
 });
+
+test('extractAlerts returns header text and informed route ids', () => {
+  const alerts = extractAlerts(alBuf);
+  expect(Array.isArray(alerts)).toBe(true);
+  expect(alerts.length).toBeGreaterThan(0);
+  const withRoute = alerts.find(a => a.routeIds.length > 0);
+  expect(withRoute).toBeTruthy();
+  expect(typeof withRoute.header).toBe('string');
+  expect(withRoute.header.length).toBeGreaterThan(0);
+  expect(typeof withRoute.effect).toBe('number');
+});
