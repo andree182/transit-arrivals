@@ -1,6 +1,11 @@
 import { expect, test } from 'vitest';
 import { vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { transformETD, transformRT, transformAlerts, ROUTE_MAP } from '../src/agencies/bart.js';
+import { extractTripUpdates as _xtu } from '../src/gtfsrt.js';
+import etdReal from './fixtures/bart-etd.json';
+import bsaReal from './fixtures/bart-bsa.json';
 
 const NOW = 1781030000;
 
@@ -107,3 +112,20 @@ function makeTripUpdatePb(tripId, stopId, time) {
   const hdr = ld(1, [...str(1, '2.0'), ...vf(2, 0)]);          // FeedHeader
   return Uint8Array.from([...hdr, ...ent]);
 }
+
+test('real ETD capture transforms to a non-trivial colored model', () => {
+  const { model } = transformETD(etdReal, NOW);
+  expect(model.length).toBeGreaterThan(0);
+  for (const l of model) expect(ROUTE_MAP[l.line]).toBeTruthy();          // every line is a known color
+});
+test('real BSA capture parses without throwing', () => {
+  const out = transformAlerts(bsaReal);
+  expect(Array.isArray(out.alerts)).toBe(true);
+});
+test('real GTFS-RT capture decodes to trips with stop times (no route_id, as expected)', () => {
+  const buf = new Uint8Array(readFileSync(fileURLToPath(new URL('./fixtures/bart-tripupdate.pb', import.meta.url))));
+  const trips = _xtu(buf);
+  expect(trips.length).toBeGreaterThan(0);
+  expect(trips.some(t => t.stops.length > 0)).toBe(true);
+  expect(trips.every(t => t.routeId == null)).toBe(true);                 // confirms the join is necessary
+});
