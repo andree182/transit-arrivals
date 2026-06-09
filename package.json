@@ -1,14 +1,14 @@
 {
   "name": "mta-arrivals",
   "author": "David Torcivia",
-  "version": "1.5.1",
+  "version": "1.6",
   "keywords": [
     "pebble-app"
   ],
   "private": true,
   "dependencies": {},
   "pebble": {
-    "displayName": "MTA Arrivals",
+    "displayName": "Transit Arrivals",
     "uuid": "ed4e3adb-9e84-45f6-be7d-da51d2ca4e1d",
     "sdkVersion": "3",
     "enableMultiJS": true,
