@@ -112,3 +112,8 @@ test('nearest station in Atlanta is a MARTA station', () => {
   const st = stations.nearestStation(33.7540, -84.3917);   // Five Points
   assert.strictEqual(st.agency, 'marta');
 });
+
+test('a downtown San Francisco coordinate resolves to a BART station', () => {
+  const s = stations.nearestStation(37.7793, -122.4193);   // near Civic Center
+  assert.strictEqual(s.agency, 'bart');
+});
