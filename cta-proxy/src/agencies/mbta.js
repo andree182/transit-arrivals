@@ -116,7 +116,7 @@ export function transformAlerts(alertsJson, wantLabels) {
 function predictionsUrl(station) {
   return 'https://api-v3.mbta.com/predictions'
     + '?filter%5Bstop%5D=' + encodeURIComponent(station)
-    + '&sort=arrival_time&include=route&page%5Blimit%5D=8';
+    + '&sort=departure_time&include=route&page%5Blimit%5D=50';
 }
 // Display label -> MBTA route id(s). `Gn` expands to all four Green branches.
 const LABEL_TO_ROUTE_IDS = {
@@ -131,7 +131,7 @@ function alertsUrl(routes) {
   for (const l of (routes || [])) for (const id of (LABEL_TO_ROUTE_IDS[l] || [])) ids.push(id);
   const routeFilter = ids.length ? '&filter%5Broute%5D=' + encodeURIComponent(ids.join(',')) : '';
   return 'https://api-v3.mbta.com/alerts'
-    + '?filter%5Bdatetime%5D=now&filter%5Bseverity%5D=3' + routeFilter;
+    + '?filter%5Bdatetime%5D=now&filter%5Bseverity%5D=3%2C4%2C5%2C6%2C7%2C8%2C9%2C10' + routeFilter;
 }
 
 function headers(env) {
