@@ -1,0 +1,6 @@
+{ "Trains": [
+  { "Car":"8","DestinationName":"Glenmont","Group":"1","Line":"RD","LocationCode":"A01","Min":"3" },
+  { "Car":"8","DestinationName":"Glenmont","Group":"1","Line":"RD","LocationCode":"A01","Min":"8" },
+  { "Car":"6","DestinationName":"Shady Grove","Group":"2","Line":"RD","LocationCode":"A01","Min":"BRD" },
+  { "Car":"8","DestinationName":"Wiehle-Reston East","Group":"2","Line":"SV","LocationCode":"A01","Min":"---" }
+] }

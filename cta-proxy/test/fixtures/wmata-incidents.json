@@ -1,0 +1,4 @@
+{ "Incidents": [
+  { "Description":"Red Line: Trains single tracking btwn Forest Glen & Glenmont.","IncidentType":"Delay","LinesAffected":"RD;" },
+  { "Description":"Blue/Orange Line: Service suspended btwn Stadium-Armory and Benning Rd due to track work.","IncidentType":"Alert","LinesAffected":"BL; OR;" }
+] }
