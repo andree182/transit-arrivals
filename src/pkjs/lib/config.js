@@ -21,13 +21,17 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 '.fav button{background:#3a3a3c;border:0;color:#fff;border-radius:6px;width:32px;height:32px;font-size:16px}' +
 '.fav button.rm{background:#5a1f1f}' +
 '#search{width:100%;box-sizing:border-box;background:#2c2c2e;border:0;border-radius:8px;color:#fff;padding:10px;font-size:15px}' +
-'#results{list-style:none;margin:8px 0 0;padding:0}#results li{padding:10px;background:#1c1c1e;border-radius:8px;margin:4px 0}' +
+'#results{list-style:none;margin:8px 0 0;padding:0}#results li{padding:10px;background:#1c1c1e;border-radius:8px;margin:4px 0;display:flex;align-items:center}' +
 '#save{position:sticky;bottom:0;width:100%;border:0;background:#0a84ff;color:#fff;padding:16px;font-size:17px;font-weight:600}' +
 '.hint{color:#888;font-size:12px;padding:0 16px 8px}' +
+'.cb{display:inline-block;min-width:30px;text-align:center;font-size:10px;font-weight:700;color:#fff;border-radius:5px;padding:2px 5px;margin-right:6px;vertical-align:middle}' +
+'.chip{background:#2c2c2e;border:0;color:#bbb;border-radius:14px;padding:5px 10px;margin:0 4px 6px 0;font-size:12px}.chip.on{background:#0a84ff;color:#fff}' +
+'#chips{padding:8px 16px 0}' +
 '</style></head><body>' +
 '<header>Transit Favorites</header>' +
 '<section><h2>Your stations</h2><div id="favs"></div>' +
 '<div class="hint" id="cap"></div></section>' +
+'<div id="chips"></div>' +
 '<section><h2>Add a station</h2>' +
 '<input id="search" placeholder="Search stations…" autocomplete="off">' +
 '<ul id="results"></ul></section>' +
@@ -39,22 +43,32 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 'var state=JSON.parse(document.getElementById("init-state").textContent);' +
 'var DB=JSON.parse(document.getElementById("station-db").textContent);' +
 'function disp(s){return s.name+(s.lines&&s.lines.length?" ("+s.lines.join("")+")":"");}' +
-'var CITY={mta:"NYC",cta:"Chicago"};' +
-'function cityTag(s){return CITY[s.agency]?" \\u00b7 "+CITY[s.agency]:"";}' +
+'var AGENCY_META={mta:{city:"NYC",c:"#0039a6"},cta:{city:"CHI",c:"#00a1de"},wmata:{city:"DC",c:"#009cde"},marta:{city:"ATL",c:"#e4002b"},lametro:{city:"LA",c:"#0072bc"}};' +
+'function meta(s){return AGENCY_META[s&&s.agency]||{city:"",c:"#666"};}' +
+'function favStation(id){for(var i=0;i<DB.length;i++)if(DB[i].id===id)return DB[i];return null;}' +
+'function badgeEl(s){var m=meta(s);if(!m.city)return null;var b=document.createElement("span");b.className="cb";b.style.background=m.c;b.textContent=m.city;return b;}' +
+'var selCity="All";' +
+'function cities(){var seen={},out=["All"];for(var i=0;i<DB.length;i++){var c=meta(DB[i]).city;if(c&&!seen[c]){seen[c]=1;out.push(c);}}return out;}' +
+'function renderChips(){var c=document.getElementById("chips");c.innerHTML="";cities().forEach(function(city){var b=document.createElement("button");b.className="chip"+(city===selCity?" on":"");b.setAttribute("data-city",city);b.textContent=city;b.onclick=function(){selCity=city;renderChips();search(document.getElementById("search").value);renderFavs();};c.appendChild(b);});}' +
+'function applyCity(s){return selCity==="All"||meta(s).city===selCity;}' +
 'function getReturn(){var m=location.search.match(/return_to=([^&]+)/);return m?decodeURIComponent(m[1]):"pebblejs://close#";}' +
 'function renderFavs(){' +
 'var c=document.getElementById("favs");c.innerHTML="";' +
 'state.favs.forEach(function(f,i){' +
+'var fs=favStation(f.id);' +
+'if(!applyCity(fs||{}))return;' +
 'var row=document.createElement("div");row.className="fav";' +
-'var meta=document.createElement("div");meta.className="meta";' +
-'var nm=document.createElement("div");nm.className="name";nm.textContent=f.name;' +
+'var metaDiv=document.createElement("div");metaDiv.className="meta";' +
+'var nm=document.createElement("div");nm.className="name";' +
+'var badge=badgeEl(fs);if(badge)nm.appendChild(badge);' +
+'var nameSpan=document.createElement("span");nameSpan.textContent=f.name;nm.appendChild(nameSpan);' +
 'var inp=document.createElement("input");inp.placeholder="Label (optional)";inp.value=f.label||"";' +
 'inp.oninput=function(){state.favs[i].label=inp.value;};' +
-'meta.appendChild(nm);meta.appendChild(inp);' +
+'metaDiv.appendChild(nm);metaDiv.appendChild(inp);' +
 'var up=document.createElement("button");up.textContent="\\u2191";up.onclick=function(){move(i,-1);};' +
 'var dn=document.createElement("button");dn.textContent="\\u2193";dn.onclick=function(){move(i,1);};' +
 'var rm=document.createElement("button");rm.className="rm";rm.textContent="\\u2715";rm.onclick=function(){state.favs.splice(i,1);renderFavs();};' +
-'row.appendChild(meta);row.appendChild(up);row.appendChild(dn);row.appendChild(rm);' +
+'row.appendChild(metaDiv);row.appendChild(up);row.appendChild(dn);row.appendChild(rm);' +
 'c.appendChild(row);});' +
 'document.getElementById("cap").textContent=state.favs.length+"/"+MAX+" favorites";' +
 '}' +
@@ -62,8 +76,12 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 'function search(q){' +
 'var ul=document.getElementById("results");ul.innerHTML="";if(!q){return;}' +
 'var ql=q.toLowerCase(),shown=0;' +
-'for(var k=0;k<DB.length&&shown<25;k++){var s=DB[k];if(s.name.toLowerCase().indexOf(ql)<0)continue;' +
-'(function(st){var li=document.createElement("li");li.textContent=disp(st)+cityTag(st);' +
+'for(var k=0;k<DB.length&&shown<25;k++){var s=DB[k];' +
+'if(!applyCity(s))continue;' +
+'if(s.name.toLowerCase().indexOf(ql)<0)continue;' +
+'(function(st){var li=document.createElement("li");' +
+'var badge=badgeEl(st);if(badge)li.appendChild(badge);' +
+'var nameSpan=document.createElement("span");nameSpan.textContent=disp(st);li.appendChild(nameSpan);' +
 'li.onclick=function(){add(st);};ul.appendChild(li);})(s);shown++;}' +
 '}' +
 'function add(st){' +
@@ -77,7 +95,7 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 'var data=encodeURIComponent(JSON.stringify({nearestPos:state.nearestPos,favs:state.favs}));' +
 'var r=getReturn();location=r+(r.indexOf("#")>=0?"":"#")+data;' +
 '});' +
-'renderFavs();' +
+'renderChips();renderFavs();' +
 '})();</script></body></html>';
 }
 

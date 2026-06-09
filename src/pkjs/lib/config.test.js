@@ -46,15 +46,27 @@ test('uses neutral multi-agency branding (not MTA-specific)', () => {
   assert.ok(html.indexOf('>MTA Favorites<') < 0, 'no MTA-specific header text');
 });
 
-test('embeds agency and a city map so results can show NYC vs Chicago', () => {
+test('embeds an agency->city/color map and a badge renderer', () => {
   const db = [
     { id: 'R16', name: 'Times Sq', lines: ['Q'], agency: 'mta' },
-    { id: '40380', name: 'Clark/Lake', lines: ['Bl', 'Br'], agency: 'cta' },
+    { id: '40380', name: 'Clark/Lake', lines: ['Bl'], agency: 'cta' },
   ];
   const html = buildConfigHtml(0, [], db);
-  const embedded = extractJson(html, 'station-db');
-  assert.strictEqual(embedded[1].agency, 'cta');             // agency passed through to the picker
-  assert.match(html, /CITY=\{mta:"NYC",cta:"Chicago"\}/);    // city-label map present in the client JS
+  assert.match(html, /AGENCY_META=/);
+  assert.match(html, /CHI/); assert.match(html, /NYC/);
+  assert.match(html, /function badgeEl\(/);
+});
+
+test('renders city filter chips derived from the DB', () => {
+  const db = [
+    { id: 'R16', name: 'A', lines: ['Q'], agency: 'mta' },
+    { id: '40380', name: 'B', lines: ['Bl'], agency: 'cta' },
+  ];
+  const html = buildConfigHtml(0, [], db);
+  assert.match(html, /id="chips"/);
+  assert.match(html, /data-city/);
+  assert.match(html, /function applyCity\(/);
+  assert.match(html, /\.cb\{/);   // badge CSS present
 });
 
 test('produces a complete HTML document', () => {
