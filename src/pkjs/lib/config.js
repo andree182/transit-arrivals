@@ -43,7 +43,7 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 'var state=JSON.parse(document.getElementById("init-state").textContent);' +
 'var DB=JSON.parse(document.getElementById("station-db").textContent);' +
 'function disp(s){return s.name+(s.lines&&s.lines.length?" ("+s.lines.join("")+")":"");}' +
-'var AGENCY_META={mta:{city:"NYC",c:"#0039a6"},cta:{city:"CHI",c:"#00a1de"},wmata:{city:"DC",c:"#009cde"},marta:{city:"ATL",c:"#e4002b"},lametro:{city:"LA",c:"#0072bc"},bart:{city:"SF",c:"#0099CC"}};' +
+'var AGENCY_META={mta:{city:"NYC",c:"#0039a6"},cta:{city:"CHI",c:"#00a1de"},wmata:{city:"DC",c:"#009cde"},marta:{city:"ATL",c:"#e4002b"},lametro:{city:"LA",c:"#0072bc"},bart:{city:"SF",c:"#0099CC"},mbta:{city:"BOS",c:"#003DA5"}};' +
 'function meta(s){return AGENCY_META[s&&s.agency]||{city:"",c:"#666"};}' +
 'function favStation(id){for(var i=0;i<DB.length;i++)if(DB[i].id===id)return DB[i];return null;}' +
 'function badgeEl(s){var m=meta(s);if(!m.city)return null;var b=document.createElement("span");b.className="cb";b.style.background=m.c;b.textContent=m.city;return b;}' +
