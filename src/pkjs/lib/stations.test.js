@@ -117,3 +117,15 @@ test('a downtown San Francisco coordinate resolves to a BART station', () => {
   const s = stations.nearestStation(37.7793, -122.4193);   // near Civic Center
   assert.strictEqual(s.agency, 'bart');
 });
+
+test('nearest station in downtown Boston is an MBTA station', () => {
+  const st = stations.nearestStation(42.3564, -71.0624);   // Park Street area
+  assert.strictEqual(st.agency, 'mbta');
+});
+
+test('an MBTA station is present, findable, and line-tagged', () => {
+  const park = stations.getStation('place-pktrm');
+  assert.ok(park, 'Park Street present');
+  assert.strictEqual(park.agency, 'mbta');
+  assert.ok(park.lines.indexOf('Rd') >= 0 && park.lines.indexOf('Gn') >= 0, 'Red + Green at Park St');
+});
