@@ -1,5 +1,20 @@
 # Transit Arrivals — Changelog
 
+## 1.9 (in progress)
+
+**Four new cities — live rail.**
+
+- **Cleveland — GCRTA.** The Red Line (heavy rail) plus the Blue, Green, and Waterfront light-rail lines, with live predictions and service alerts. No key required.
+- **Miami — Metrorail & Metromover.** Metrorail plus the downtown Metromover people-mover loops, with live arrivals (via Swiftly).
+- **Baltimore — MDOT MTA.** Metro SubwayLink and Light RailLink, with live arrivals and the agency's open service-alerts feed.
+- **Honolulu — Skyline.** O‘ahu's new automated metro, with live arrivals (via TheBus real-time feed).
+
+That brings the app to **eleven transit systems**. Miami, Baltimore, and Honolulu stream live once their real-time keys are configured; Cleveland is live immediately.
+
+Phase 2 (coming next): **PATCO** (Philadelphia–South Jersey) and **Tren Urbano** (San Juan) on published timetables, clearly marked **"SCHED"** since those agencies don't publish real-time data.
+
+---
+
 ## 1.8
 
 **Three new cities.**
