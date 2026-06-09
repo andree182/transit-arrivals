@@ -141,3 +141,9 @@ test('nearest station to downtown Cleveland is a GCRTA stop', () => {
   const s = nearestStation(41.4975, -81.6940);
   assert.strictEqual(s.agency, 'gcrta');
 });
+
+test('nearest station to downtown Miami is a Miami Metrorail/Metromover station', () => {
+  // Government Center Metromover: 25.7759, -80.1961
+  const s = nearestStation(25.7759, -80.1961);
+  assert.strictEqual(s.agency, 'miami');
+});
