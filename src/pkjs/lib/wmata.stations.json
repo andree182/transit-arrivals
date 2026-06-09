@@ -1,0 +1,7 @@
+[
+{"id":"A01,C01","name":"Metro Center","lat":38.898303,"lon":-77.028099,"lines":["Rd","Or","Sv","Bl"],"agency":"wmata"},
+{"id":"B01,F01","name":"Gallery Pl-Chinatown","lat":38.89834,"lon":-77.021851,"lines":["Rd","Gn","Yl"],"agency":"wmata"},
+{"id":"D03,F03","name":"L'Enfant Plaza","lat":38.884775,"lon":-77.021964,"lines":["Or","Sv","Bl","Gn","Yl"],"agency":"wmata"},
+{"id":"B11","name":"Glenmont","lat":39.111893,"lon":-77.052413,"lines":["Rd"],"agency":"wmata"},
+{"id":"C07","name":"Pentagon","lat":38.869443,"lon":-77.054178,"lines":["Bl","Yl"],"agency":"wmata"}
+]
