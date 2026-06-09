@@ -148,3 +148,23 @@ test('encodes a non-ASCII station name (middle dot) as valid UTF-8', () => {
   assert.strictEqual(bytes[5 + 16], 0xc2);   // middle-dot lead byte
   assert.strictEqual(bytes[5 + 17], 0xb7);   // middle-dot continuation byte
 });
+
+test('encodeBundle carries notice for a directions:[] line (El/BSL path)', () => {
+  const epoch = 1781028000;
+  const lines = [{ line: 'L', color: [0, 124, 196], directions: [],
+                   notice: 'No live arrivals — SEPTA doesn’t publish them' }];
+  const buf = encodeBundle('septa-8th-market', '8th & Market', lines, epoch);
+  // Decode just enough to find the line block: skip version(1)+epoch(4)+name(39)+id(11)+count(1)
+  let p = 1 + 4 + 39 + 11 + 1;
+  // line label (2) + color (3) + dirCount (1)
+  const label = String.fromCharCode(buf[p], buf[p + 1]).replace(/\0/g, '');
+  assert.strictEqual(label, 'L');
+  p += 2 + 3;
+  assert.strictEqual(buf[p], 0);            // directions length 0
+  p += 1;
+  const n = buf[p]; p += 1;                 // notice length
+  assert.ok(n > 0, 'notice length must be > 0');
+  const bytes = Array.from(buf.slice(p, p + n));
+  const decoded = Buffer.from(bytes).toString('latin1');
+  assert.ok(/No live arrivals/.test(decoded), 'notice text must be present');
+});
