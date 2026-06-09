@@ -1,0 +1,14 @@
+{
+  "name": "cta-proxy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "wrangler": "^3.0.0"
+  }
+}
