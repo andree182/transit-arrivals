@@ -40,15 +40,20 @@ function labelForRoute(routeId) {
 export function transformAlerts(rows, wantLabels) {
   const want = new Set((wantLabels || []).map(String));
   const alerts = [], suspensions = [];
+  const seenHeader = new Set(), seenSusp = new Set();   // dedup repeated entities (e.g. per-sub-route), as SEPTA does
   for (const a of (Array.isArray(rows) ? rows : [])) {
     const labels = [...new Set((a.routeIds || []).map(labelForRoute).filter(Boolean))];
     const hit = labels.filter(l => want.has(l));
     if (!hit.length) continue;                          // not a requested line -> drop
     const header = String(a.header || '').trim();
-    if (header) alerts.push(header);
+    if (header && !seenHeader.has(header)) { seenHeader.add(header); alerts.push(header); }
     const isSuspension = a.effect === 1 || /suspend|no service/i.test(header);
     if (isSuspension) {
-      for (const l of hit) suspensions.push({ line: l, color: colorForLabel(l), reason: header });
+      for (const l of hit) {
+        if (seenSusp.has(l)) continue;
+        seenSusp.add(l);
+        suspensions.push({ line: l, color: colorForLabel(l), reason: header });
+      }
     }
   }
   return { alerts, suspensions };
