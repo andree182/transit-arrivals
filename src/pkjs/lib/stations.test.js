@@ -129,3 +129,9 @@ test('an MBTA station is present, findable, and line-tagged', () => {
   assert.strictEqual(park.agency, 'mbta');
   assert.ok(park.lines.indexOf('Rd') >= 0 && park.lines.indexOf('Gn') >= 0, 'Red + Green at Park St');
 });
+
+test('nearest station to Center City Philadelphia is a SEPTA station', () => {
+  // City Hall area: 39.9526, -75.1652
+  const s = stations.nearestStation(39.9526, -75.1652);
+  assert.strictEqual(s.agency, 'septa');
+});
