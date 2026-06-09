@@ -46,6 +46,7 @@ test('merges suspensions as synthetic banner lines when no trains run', () => ne
     var banner = res.model.find(function (m) { return m.line === 'Br'; });
     assert.deepStrictEqual(banner.directions, []);
     assert.strictEqual(banner.notice, 'Suspended A-B');
+    assert.deepStrictEqual(banner.color, [98, 54, 27]);   // Brown brand color, not gray
     resolve();
   });
 }));

@@ -23,8 +23,9 @@ function haversine(aLat, aLon, bLat, bLon) {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
-// ~100 km: comfortably covers the NYC metro + PATH service area, but excludes
-// other cities. Beyond it the user isn't near the system at all.
+// ~100 km from the nearest station in ANY agency's directory (NYC metro + PATH,
+// Chicago CTA, …). Beyond it the user isn't near a covered system at all and we
+// fall back to the default hub rather than a meaningless thousands-of-miles pin.
 var SERVICE_RADIUS_M = 100000;
 var DEFAULT_STATION_ID = 'R16';   // Times Sq-42 St — the canonical fallback hub
 
