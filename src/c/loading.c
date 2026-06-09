@@ -79,7 +79,7 @@ static void seed_builtin(void) {
   L0->nDirs = 1;
   DirView *D = &L0->dirs[0];
   strncpy(D->dest, "LOADING", sizeof(D->dest) - 1);
-  D->dir = 0; D->n = 3; D->expMask = 0;
+  D->dirLabel[0] = 0; D->n = 3; D->expMask = 0;
   D->delta[0] = 12 * 60; D->delta[1] = 5 * 60; D->delta[2] = 9 * 60;
 }
 

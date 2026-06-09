@@ -1,4 +1,5 @@
 #include <pebble.h>
+#include <string.h>
 #include "bundle.h"
 #include "hero.h"
 #include "states.h"
@@ -990,7 +991,7 @@ static void load_cached_bundle(void) {
 static void load_stub_bundle(void) {
   Bundle *B = &s_bundle;
   memset(B, 0, sizeof(*B));
-  B->version = 5;
+  B->version = 6;
   B->epochBase = (uint32_t)time(NULL);
   strncpy(B->station, "Times Sq-42 St", sizeof(B->station) - 1);
   strncpy(B->id, "127", sizeof(B->id) - 1);
@@ -1012,10 +1013,10 @@ static void load_stub_bundle(void) {
     L->nDirs = 2;
     DirView *N = &L->dirs[0];
     strncpy(N->dest, rows[i].n, sizeof(N->dest) - 1);
-    N->dir = 0; N->n = 3; N->delta[0] = rows[i].d0; N->delta[1] = rows[i].d0 + 360; N->delta[2] = rows[i].d0 + 900;
+    strcpy(N->dirLabel, "MANHATTAN"); N->n = 3; N->delta[0] = rows[i].d0; N->delta[1] = rows[i].d0 + 360; N->delta[2] = rows[i].d0 + 900;
     DirView *S = &L->dirs[1];
     strncpy(S->dest, rows[i].s, sizeof(S->dest) - 1);
-    S->dir = 1; S->n = 3; S->delta[0] = rows[i].d1; S->delta[1] = rows[i].d1 + 420; S->delta[2] = rows[i].d1 + 1020;
+    strcpy(S->dirLabel, "BROOKLYN"); S->n = 3; S->delta[0] = rows[i].d1; S->delta[1] = rows[i].d1 + 420; S->delta[2] = rows[i].d1 + 1020;
   }
   s_have_bundle = true;
 }
