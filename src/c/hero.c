@@ -164,10 +164,9 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   // the train heads toward. dir codes 0..3 index the table; 4 ("none") is for
   // lines whose ends share a borough (shuttles, SIR) — the phone suppresses the
   // word there and the headsign alone disambiguates.
-  static const char *const DIR_LABELS[] = { "MANHATTAN", "BROOKLYN", "QUEENS", "BRONX" };
   int hdr_inset = PBL_IF_ROUND_ELSE(34, 4);
   int dir_top = (int)(6 * SY);
-  const char *dlabel = (D->dir < 4) ? DIR_LABELS[D->dir] : NULL;
+  const char *dlabel = (D->dirLabel[0]) ? D->dirLabel : NULL;
   if (dlabel) {
     graphics_context_set_text_color(ctx, GColorLightGray);
     graphics_draw_text(ctx, dlabel, fonts_get_system_font(FONT_KEY_GOTHIC_14),
@@ -379,10 +378,9 @@ int hero_glyphs(GRect bounds, const Bundle *b, uint8_t line, uint8_t dir,
   int n = 0;
 
   // --- direction label (row 0) ------------------------------------------------
-  static const char *const DIR_LABELS[] = { "MANHATTAN", "BROOKLYN", "QUEENS", "BRONX" };
   int hdr_inset = PBL_IF_ROUND_ELSE(34, 4);
   int dir_top = (int)(6 * SY);
-  const char *dlabel = (D->dir < 4) ? DIR_LABELS[D->dir] : NULL;
+  const char *dlabel = (D->dirLabel[0]) ? D->dirLabel : NULL;
   if (dlabel) {
     n = emit_chars(out, n, max, dlabel, fonts_get_system_font(FONT_KEY_GOTHIC_14),
                    GColorLightGray, GColorBlack,
