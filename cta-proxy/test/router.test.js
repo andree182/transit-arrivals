@@ -54,3 +54,11 @@ test('accepts comma-joined mapid complex via ?mapid= (Washington/Lake)', async (
   expect(body.error).toBeUndefined();
   expect(body).toHaveProperty('model');
 });
+test('gcrta is a registered agency (unknown station -> empty model, not error)', async () => {
+  globalThis.fetch = vi.fn(async () => { throw new Error('no live call'); });
+  const r = await call('/gcrta/arrivals?station=__none__');
+  const body = await r.json();
+  expect(r.status).toBe(200);
+  expect(body.error).toBeUndefined();
+  expect(body.model).toEqual([]);
+});
