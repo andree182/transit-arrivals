@@ -70,3 +70,11 @@ test('miami is a registered agency (unknown station -> empty model)', async () =
   expect(body.error).toBeUndefined();
   expect(body.model).toEqual([]);
 });
+test('baltimore is a registered agency (unknown station -> empty model)', async () => {
+  globalThis.fetch = vi.fn(async () => { throw new Error('no live call'); });
+  const r = await call('/baltimore/arrivals?station=__none__');
+  const body = await r.json();
+  expect(r.status).toBe(200);
+  expect(body.error).toBeUndefined();
+  expect(body.model).toEqual([]);
+});

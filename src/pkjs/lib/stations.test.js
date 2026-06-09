@@ -147,3 +147,9 @@ test('nearest station to downtown Miami is a Miami Metrorail/Metromover station'
   const s = nearestStation(25.7759, -80.1961);
   assert.strictEqual(s.agency, 'miami');
 });
+
+test('nearest station to Owings Mills is a Baltimore MDOT MTA station', () => {
+  // Owings Mills Metro terminal: 39.4073509, -76.779895
+  const s = nearestStation(39.4073509, -76.779895);
+  assert.strictEqual(s.agency, 'baltimore');
+});

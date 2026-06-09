@@ -8,8 +8,9 @@ import * as mbta from './agencies/mbta.js';
 import * as septa from './agencies/septa.js';
 import * as gcrta from './agencies/gcrta.js';
 import * as miami from './agencies/miami.js';
+import * as baltimore from './agencies/baltimore.js';
 
-const AGENCIES = { cta, wmata, marta, lametro, bart, mbta, septa, gcrta, miami };
+const AGENCIES = { cta, wmata, marta, lametro, bart, mbta, septa, gcrta, miami, baltimore };
 const ARR_TTL = 25, ALR_TTL = 60;
 
 export default {

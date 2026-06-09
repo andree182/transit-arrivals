@@ -7,6 +7,7 @@ var MBTA_DB = require('./mbta.stations.json');
 var SEPTA_DB = require('./septa.stations.json');
 var GCRTA_DB = require('./gcrta.stations.json');
 var MIAMI_DB = require('./miami.stations.json');
+var BALT_DB = require('./baltimore.stations.json');
 
 function tag(list, agency) {
   return list.map(function (s) {
@@ -19,7 +20,7 @@ function tag(list, agency) {
 }
 
 // Concatenation of every agency's on-phone directory.
-var DB = tag(MTA_DB, 'mta').concat(tag(CTA_DB, 'cta')).concat(tag(WMATA_DB, 'wmata')).concat(tag(MARTA_DB, 'marta')).concat(tag(BART_DB, 'bart')).concat(tag(MBTA_DB, 'mbta')).concat(tag(SEPTA_DB, 'septa')).concat(tag(GCRTA_DB, 'gcrta')).concat(tag(MIAMI_DB, 'miami'));
+var DB = tag(MTA_DB, 'mta').concat(tag(CTA_DB, 'cta')).concat(tag(WMATA_DB, 'wmata')).concat(tag(MARTA_DB, 'marta')).concat(tag(BART_DB, 'bart')).concat(tag(MBTA_DB, 'mbta')).concat(tag(SEPTA_DB, 'septa')).concat(tag(GCRTA_DB, 'gcrta')).concat(tag(MIAMI_DB, 'miami')).concat(tag(BALT_DB, 'baltimore'));
 
 function haversine(aLat, aLon, bLat, bLon) {
   var R = 6371000, toRad = Math.PI / 180;
