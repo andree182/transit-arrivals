@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { transformArrivals } from '../src/arrivals.js';
+import { transform as transformArrivals } from '../src/agencies/cta.js';
 import fixture from './fixtures/ttarrivals-clark-lake.json';
 
 const NOW = 1719853200;   // arbitrary response-time anchor; deltas come from arrT - prdt

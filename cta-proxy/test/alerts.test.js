@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { transformAlerts } from '../src/alerts.js';
+import { transformAlerts } from '../src/agencies/cta.js';
 import routes from './fixtures/routes.json';
 import alerts from './fixtures/alerts.json';
 
@@ -16,12 +16,14 @@ test('ignores station-only (ServiceType T) alerts with no requested route', () =
 
 test('detects a suspension from an alert Impact', () => {
   const out = transformAlerts(routes, alerts, ['Br']);
-  expect(out.suspensions.filter(s => s.line === 'Br').length).toBe(1);   // deduped across alert + routes
+  const s = out.suspensions.find(s => s.line === 'Br');
+  expect(s).toBeTruthy();
+  expect(s.color).toEqual([98, 54, 27]);
 });
 
 test('detects a suspension from routes.aspx RouteStatus alone', () => {
   const out = transformAlerts(routes, alerts, ['Gr']);   // Green: suspended only via routes.aspx
-  expect(out.suspensions).toEqual([{ line: 'Gr', reason: 'Service Suspended' }]);
+  expect(out.suspensions).toEqual([{ line: 'Gr', color: [0, 155, 58], reason: 'Service Suspended' }]);
 });
 
 test('no suspension for a route with only a planned reroute', () => {
