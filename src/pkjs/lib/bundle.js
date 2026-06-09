@@ -12,20 +12,21 @@ function utf8Bytes(s) {
   }
   return out;
 }
-function putStr(arr, s, n) {
-  var b = utf8Bytes(String(s == null ? '' : s));
-  if (b.length > n) {
-    b = b.slice(0, n);
-    // Don't leave a partial multi-byte sequence at the cut: drop trailing
-    // continuation bytes, then a now-incomplete lead byte.
-    var i = b.length;
-    while (i > 0 && (b[i - 1] & 0xC0) === 0x80) i--;
-    if (i > 0 && (b[i - 1] & 0x80)) {
-      var lead = b[i - 1], need = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
-      if (b.length - (i - 1) < need) i--;
-    }
-    b = b.slice(0, i);
+// Trim a UTF-8 byte array to at most n bytes without splitting a multi-byte
+// sequence (drop trailing continuation bytes, then a now-incomplete lead byte).
+function clampUtf8(b, n) {
+  if (b.length <= n) return b;
+  b = b.slice(0, n);
+  var i = b.length;
+  while (i > 0 && (b[i - 1] & 0xC0) === 0x80) i--;
+  if (i > 0 && (b[i - 1] & 0x80)) {
+    var lead = b[i - 1], need = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+    if (b.length - (i - 1) < need) i--;
   }
+  return b.slice(0, i);
+}
+function putStr(arr, s, n) {
+  var b = clampUtf8(utf8Bytes(String(s == null ? '' : s)), n);
   for (var k = 0; k < n; k++) arr.push(k < b.length ? b[k] : 0);
 }
 function putU16(arr, v) { v = v < 0 ? 0 : (v > 65535 ? 65535 : v); arr.push(v & 0xff, (v >> 8) & 0xff); }
@@ -44,10 +45,12 @@ function encodeBundle(stationId, stationName, lines, epochBase) {
     var dirs = ln.directions || [];
     b.push(dirs.length & 0xff);
     if (dirs.length === 0) {
-      var notice = ln.notice || '';
-      var n = notice.length > 80 ? 80 : notice.length;
-      b.push(n & 0xff);
-      for (var i = 0; i < n; i++) b.push(notice.charCodeAt(i) & 0xff);
+      // Variable-length, byte-length-prefixed UTF-8 (max 80 bytes -> watch's
+      // 81-byte buffer). UTF-8 (not Latin-1) so non-ASCII alert/notice text
+      // (em-dash, accents) renders on-watch instead of garbling.
+      var nb = clampUtf8(utf8Bytes(String(ln.notice || '')), 80);
+      b.push(nb.length & 0xff);
+      for (var i = 0; i < nb.length; i++) b.push(nb[i]);
     } else {
       dirs.forEach(function (d) {
         putStr(b, d.dest, 20);

@@ -168,3 +168,20 @@ test('encodeBundle carries notice for a directions:[] line (El/BSL path)', () =>
   const decoded = Buffer.from(bytes).toString('latin1');
   assert.strictEqual(decoded, "No live arrivals - SEPTA doesn't publish them", 'notice round-trips exactly');
 });
+
+test('notice/reason encodes as UTF-8 (non-ASCII alert text does not garble)', () => {
+  // A live suspension reason with an em-dash (U+2014) and accented char must
+  // survive as UTF-8 — the byte-length prefix counts BYTES, and the watch reads
+  // the buffer as UTF-8. (Latin-1 truncation would emit a lone 0x14 / 0xE9.)
+  const epoch = 1781028000;
+  const reason = 'Delays — Café stop closed';
+  const lines = [{ line: 'Rd', color: [1, 2, 3], directions: [], notice: reason }];
+  const buf = encodeBundle('x', 'X', lines, epoch);
+  let p = 1 + 4 + 39 + 11 + 1 + 2 + 3;        // → dirCount
+  assert.strictEqual(buf[p], 0); p += 1;       // directions length 0
+  const n = buf[p]; p += 1;                    // notice BYTE length
+  const bytes = Buffer.from(Array.from(buf.slice(p, p + n)));
+  assert.strictEqual(n, Buffer.byteLength(reason, 'utf8'), 'length prefix is the UTF-8 byte count');
+  assert.strictEqual(bytes.toString('utf8'), reason, 'round-trips as UTF-8');
+  assert.ok(bytes.includes(0xE2) && bytes.includes(0x94), 'em-dash present as UTF-8 (E2 80 94), not truncated to 0x14');
+});
