@@ -1,0 +1,5 @@
+{ "CTARoutes": { "TimeStamp": "2026-06-08T20:51:27", "ErrorCode": ["0","0"], "ErrorMessage": [null,null], "RouteInfo": [
+  { "Route": "Blue Line", "RouteColorCode": "00a1de", "RouteTextColor": "ffffff", "ServiceId": "Blue", "RouteStatus": "Normal Service", "RouteStatusColor": "404040" },
+  { "Route": "Brown Line", "RouteColorCode": "62361b", "RouteTextColor": "ffffff", "ServiceId": "Brn", "RouteStatus": "Service Suspended", "RouteStatusColor": "cc0000" },
+  { "Route": "Green Line", "RouteColorCode": "009b3a", "RouteTextColor": "ffffff", "ServiceId": "G", "RouteStatus": "Service Suspended", "RouteStatusColor": "cc0000" }
+] } }

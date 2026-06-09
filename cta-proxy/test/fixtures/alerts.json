@@ -1,0 +1,8 @@
+{ "CTAAlerts": { "TimeStamp": "2026-06-08T20:51:30", "ErrorCode": "0", "ErrorMessage": null, "Alert": [
+  { "AlertId": "1", "Headline": "Blue Line trains rerouted", "ShortDescription": "Due to construction, some Blue Line trains are rerouted.", "Impact": "Planned Reroute", "SeverityScore": "30", "ttim": "1",
+    "ImpactedService": { "Service": [ { "ServiceType": "R", "ServiceId": "Blue", "ServiceName": "Blue Line" } ] } },
+  { "AlertId": "2", "Headline": "Brown Line service suspended", "ShortDescription": "Brown Line service is suspended between A and B.", "Impact": "Service Suspended", "SeverityScore": "55", "ttim": "1",
+    "ImpactedService": { "Service": [ { "ServiceType": "T", "ServiceId": "41480", "ServiceName": "Western" }, { "ServiceType": "R", "ServiceId": "Brn", "ServiceName": "Brown Line" } ] } },
+  { "AlertId": "3", "Headline": "Western elevator out of service", "ShortDescription": "Elevator at Western out of service.", "Impact": "Elevator Status", "ttim": "0",
+    "ImpactedService": { "Service": [ { "ServiceType": "T", "ServiceId": "41480", "ServiceName": "Western" } ] } }
+] } }
