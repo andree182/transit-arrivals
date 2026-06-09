@@ -14,6 +14,7 @@ That's **seven transit systems** in one app — New York, Chicago, Washington, A
 
 - **Atlanta (MARTA) service alerts** are now supported.
 - **"NO DATA" indicator** for any line that doesn't publish live arrivals — no fake countdowns.
+- **Color-coded cities** in settings: each city now has its own distinct color on the filter chips and station badges, so you can tell them apart at a glance.
 - Reliability fixes: BART falls back to a second live feed if its primary is down, and non-English alert text (accents, dashes) now renders correctly on the watch.
 
 ---

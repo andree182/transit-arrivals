@@ -43,13 +43,18 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 'var state=JSON.parse(document.getElementById("init-state").textContent);' +
 'var DB=JSON.parse(document.getElementById("station-db").textContent);' +
 'function disp(s){return s.name+(s.lines&&s.lines.length?" ("+s.lines.join("")+")":"");}' +
-'var AGENCY_META={mta:{city:"NYC",c:"#0039a6"},cta:{city:"CHI",c:"#00a1de"},wmata:{city:"DC",c:"#009cde"},marta:{city:"ATL",c:"#e4002b"},lametro:{city:"LA",c:"#0072bc"},bart:{city:"SF",c:"#0099CC"},mbta:{city:"BOS",c:"#003DA5"},septa:{city:"PHL",c:"#1A2A5A"}};' +
+// One distinct, city-iconic color per agency (used for the row badge AND the
+// filter chip). Kept visually separable so every city reads uniquely.
+'var AGENCY_META={mta:{city:"NYC",c:"#0039A6"},cta:{city:"CHI",c:"#2A8FD4"},wmata:{city:"DC",c:"#C8102E"},marta:{city:"ATL",c:"#F2A900"},lametro:{city:"LA",c:"#0098A9"},bart:{city:"SF",c:"#ED7B26"},mbta:{city:"BOS",c:"#00843D"},septa:{city:"PHL",c:"#7C3AED"}};' +
 'function meta(s){return AGENCY_META[s&&s.agency]||{city:"",c:"#666"};}' +
+'function colorForCity(city){for(var k in AGENCY_META)if(AGENCY_META[k].city===city)return AGENCY_META[k].c;return "#0a84ff";}' +
+// Dark vs light text by perceived luminance, so gold/sky chips stay legible.
+'function textOn(hex){var h=hex.replace("#","");var r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16);return (0.299*r+0.587*g+0.114*b)>150?"#111":"#fff";}' +
 'function favStation(id){for(var i=0;i<DB.length;i++)if(DB[i].id===id)return DB[i];return null;}' +
-'function badgeEl(s){var m=meta(s);if(!m.city)return null;var b=document.createElement("span");b.className="cb";b.style.background=m.c;b.textContent=m.city;return b;}' +
+'function badgeEl(s){var m=meta(s);if(!m.city)return null;var b=document.createElement("span");b.className="cb";b.style.background=m.c;b.style.color=textOn(m.c);b.textContent=m.city;return b;}' +
 'var selCity="All";' +
 'function cities(){var seen={},out=["All"];for(var i=0;i<DB.length;i++){var c=meta(DB[i]).city;if(c&&!seen[c]){seen[c]=1;out.push(c);}}return out;}' +
-'function renderChips(){var c=document.getElementById("chips");c.innerHTML="";cities().forEach(function(city){var b=document.createElement("button");b.className="chip"+(city===selCity?" on":"");b.setAttribute("data-city",city);b.textContent=city;b.onclick=function(){selCity=city;renderChips();search(document.getElementById("search").value);renderFavs();};c.appendChild(b);});}' +
+'function renderChips(){var c=document.getElementById("chips");c.innerHTML="";cities().forEach(function(city){var on=(city===selCity);var b=document.createElement("button");b.className="chip"+(on?" on":"");b.setAttribute("data-city",city);b.textContent=city;if(city!=="All"){var col=colorForCity(city);b.style.background=col;b.style.color=textOn(col);b.style.opacity=on?"1":"0.45";b.style.border=on?"2px solid #fff":"2px solid transparent";}b.onclick=function(){selCity=city;renderChips();search(document.getElementById("search").value);renderFavs();};c.appendChild(b);});}' +
 'function applyCity(s){return selCity==="All"||meta(s).city===selCity;}' +
 'function getReturn(){var m=location.search.match(/return_to=([^&]+)/);return m?decodeURIComponent(m[1]):"pebblejs://close#";}' +
 'function renderFavs(){' +
