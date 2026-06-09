@@ -93,15 +93,15 @@ function getArrivals(station, cb) {
     }
     alertsDone = true; finish();
   };
-  ax.onerror = function () { alertsDone = true; finish(); };
+  ax.onerror = function () { console.log('[mta] alerts network FAIL'); alertsDone = true; finish(); };
   ax.send();
 
   urls.forEach(function (url) {
     fetchFeed(url, function (err, buf) {
-      if (err) { failedFeeds++; }
+      if (err) { failedFeeds++; console.log('[mta] feed FAIL ' + err.message + ' ' + url); }
       else {
         try { rows = rows.concat(gtfsrt.extractStopTimes(buf)); }
-        catch (e) { failedFeeds++; }
+        catch (e) { failedFeeds++; console.log('[mta] parse EXC ' + e.message + ' ' + url); }
       }
       pendingFeeds--; finish();
     });
