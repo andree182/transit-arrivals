@@ -1,0 +1,14 @@
+[
+{"id":"FIVE POINTS STATION","name":"Five Points","lat":33.753882,"lon":-84.391490,"lines":["Rd","Gd","Bl","Gn"],"agency":"marta"},
+{"id":"GEORGIA STATE STATION","name":"Georgia State","lat":33.749526,"lon":-84.385790,"lines":["Bl","Gn"],"agency":"marta"},
+{"id":"MIDTOWN STATION","name":"Midtown","lat":33.780869,"lon":-84.386360,"lines":["Rd","Gd"],"agency":"marta"},
+{"id":"ARTS CENTER STATION","name":"Arts Center","lat":33.789247,"lon":-84.387314,"lines":["Rd","Gd"],"agency":"marta"},
+{"id":"LINDBERGH CENTER STATION","name":"Lindbergh Center","lat":33.823625,"lon":-84.369129,"lines":["Rd","Gd"],"agency":"marta"},
+{"id":"NORTH SPRINGS STATION","name":"North Springs","lat":33.945495,"lon":-84.357114,"lines":["Rd"],"agency":"marta"},
+{"id":"DORAVILLE STATION","name":"Doraville","lat":33.902694,"lon":-84.280030,"lines":["Gd"],"agency":"marta"},
+{"id":"AIRPORT STATION","name":"Airport","lat":33.640066,"lon":-84.446269,"lines":["Rd","Gd"],"agency":"marta"},
+{"id":"COLLEGE PARK STATION","name":"College Park","lat":33.650676,"lon":-84.448486,"lines":["Rd","Gd"],"agency":"marta"},
+{"id":"DECATUR STATION","name":"Decatur","lat":33.774492,"lon":-84.295508,"lines":["Bl","Gn"],"agency":"marta"},
+{"id":"INDIAN CREEK STATION","name":"Indian Creek","lat":33.769402,"lon":-84.227715,"lines":["Bl"],"agency":"marta"},
+{"id":"HAMILTON E HOLMES STATION","name":"Hamilton E Holmes","lat":33.754913,"lon":-84.469152,"lines":["Bl"],"agency":"marta"}
+]

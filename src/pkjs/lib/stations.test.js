@@ -107,3 +107,8 @@ test('nearest station in DC is a WMATA station', () => {
   const st = stations.nearestStation(38.8983, -77.0281);   // Metro Center
   assert.strictEqual(st.agency, 'wmata');
 });
+
+test('nearest station in Atlanta is a MARTA station', () => {
+  const st = stations.nearestStation(33.7540, -84.3917);   // Five Points
+  assert.strictEqual(st.agency, 'marta');
+});

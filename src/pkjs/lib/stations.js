@@ -1,6 +1,7 @@
 var MTA_DB = require('./stations.data.json');
 var CTA_DB = require('./cta.stations.json');
 var WMATA_DB = require('./wmata.stations.json');
+var MARTA_DB = require('./marta.stations.json');
 
 function tag(list, agency) {
   return list.map(function (s) {
@@ -13,7 +14,7 @@ function tag(list, agency) {
 }
 
 // Concatenation of every agency's on-phone directory.
-var DB = tag(MTA_DB, 'mta').concat(tag(CTA_DB, 'cta')).concat(tag(WMATA_DB, 'wmata'));
+var DB = tag(MTA_DB, 'mta').concat(tag(CTA_DB, 'cta')).concat(tag(WMATA_DB, 'wmata')).concat(tag(MARTA_DB, 'marta'));
 
 function haversine(aLat, aLon, bLat, bLon) {
   var R = 6371000, toRad = Math.PI / 180;
