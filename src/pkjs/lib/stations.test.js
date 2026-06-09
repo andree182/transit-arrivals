@@ -153,3 +153,9 @@ test('nearest station to Owings Mills is a Baltimore MDOT MTA station', () => {
   const s = nearestStation(39.4073509, -76.779895);
   assert.strictEqual(s.agency, 'baltimore');
 });
+
+test('nearest station near East Kapolei is a Skyline station', () => {
+  // Kualaka\'i East Kapolei Skyline station: 21.345574, -158.050995
+  const s = nearestStation(21.345574, -158.050995);
+  assert.strictEqual(s.agency, 'skyline');
+});
