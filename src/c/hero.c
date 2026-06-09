@@ -160,10 +160,10 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   float SX = bounds.size.w / REF_W, SY = bounds.size.h / REF_H;
   graphics_context_set_antialiased(ctx, true);
 
-  // Direction line (small gray caps) over the destination headsign: the borough
-  // the train heads toward. dir codes 0..3 index the table; 4 ("none") is for
-  // lines whose ends share a borough (shuttles, SIR) — the phone suppresses the
-  // word there and the headsign alone disambiguates.
+  // Direction label (small gray caps) over the destination headsign. The phone
+  // sends the word straight in the bundle (a borough for MTA), or an empty string
+  // for services whose ends share a borough (shuttles, SIR) and for agencies with
+  // no direction word — there the headsign alone disambiguates.
   int hdr_inset = PBL_IF_ROUND_ELSE(34, 4);
   int dir_top = (int)(6 * SY);
   const char *dlabel = (D->dirLabel[0]) ? D->dirLabel : NULL;
