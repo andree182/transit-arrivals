@@ -7,6 +7,46 @@ function hexToRgb(h) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
+function haversineM(aLat, aLon, bLat, bLon) {
+  const R = 6371000, toRad = Math.PI / 180;
+  const dLat = (bLat - aLat) * toRad, dLon = (bLon - aLon) * toRad;
+  const s = Math.sin(dLat / 2) ** 2 +
+            Math.cos(aLat * toRad) * Math.cos(bLat * toRad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+function titleCase(s) {
+  return String(s || '').toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
+}
+
+// Merge station rows that share a name and sit within `distM` of each other into one
+// row (union stopIds + lines, average coords). Needed for agencies that model each
+// directional platform as a separate standalone stop with no parent_station (e.g.
+// GCRTA light rail), which would otherwise show two identical single-direction entries.
+// Mutates `stationStops`; returns the filtered station list.
+function mergeByName(stations, stationStops, distM) {
+  const groups = {};
+  for (const s of stations) (groups[s.name.trim().toUpperCase()] ||= []).push(s);
+  const removed = new Set();
+  for (const key of Object.keys(groups)) {
+    const g = groups[key];
+    for (let i = 0; i < g.length; i++) {
+      const base = g[i];
+      if (removed.has(base.id)) continue;
+      for (let j = i + 1; j < g.length; j++) {
+        const o = g[j];
+        if (removed.has(o.id) || haversineM(base.lat, base.lon, o.lat, o.lon) > distM) continue;
+        stationStops[base.id] = [...new Set(stationStops[base.id].concat(stationStops[o.id] || []))].sort();
+        base.lines = [...new Set(base.lines.concat(o.lines))].sort();
+        base.lat = (base.lat + o.lat) / 2; base.lon = (base.lon + o.lon) / 2;
+        delete stationStops[o.id];
+        removed.add(o.id);
+      }
+    }
+  }
+  return stations.filter(s => !removed.has(s.id));
+}
+
 // gtfs: { stops, routes, trips, stopTimes } parsed rows.
 // cfg:  { id, agency, railTypes:Set<number>, labelFor(route)->label|null,
 //         colorFor?(route,label)->[r,g,b] }  (colorFor optional; defaults to route_color)
@@ -64,7 +104,7 @@ function buildRailArtifacts(gtfs, cfg) {
     }
   }
   // 5. phone DB rows; prefer the parent station's own name/coords when present
-  const stations = Object.keys(stationStops).map(station => {
+  let stations = Object.keys(stationStops).map(station => {
     const agg = stationAgg[station];
     const parent = stopById[station];
     const name = (parent && parent.stop_name) || names[stationStops[station][0]];
@@ -74,6 +114,13 @@ function buildRailArtifacts(gtfs, cfg) {
   }).filter(s => s.id && isFinite(s.lat) && isFinite(s.lon))
     .sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   for (const k of Object.keys(stationStops)) stationStops[k].sort();
+  // Optional: collapse same-named, co-located directional platforms into one station.
+  if (cfg.mergeByNameMeters) stations = mergeByName(stations, stationStops, cfg.mergeByNameMeters);
+  // Optional: normalize SHOUTY GTFS names to Title Case for display (phone DB + dest names).
+  if (cfg.titleCase) {
+    for (const s of stations) s.name = titleCase(s.name);
+    for (const k of Object.keys(names)) names[k] = titleCase(names[k]);
+  }
   return { stations, data: { stations: stationStops, names, routes: routesOut } };
 }
 

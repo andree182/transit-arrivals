@@ -51,3 +51,37 @@ test('routes map carries label + parsed color; names cover rail stops only', () 
   assert.strictEqual(data.names.e1, 'East End');
   assert.strictEqual(data.names.b1, undefined);                   // bus stop name not bundled
 });
+
+// Two same-named standalone platforms ~17m apart on a parent-less LRT route.
+const lrtGtfs = {
+  stops: [
+    { stop_id: 'a1', stop_name: 'ASHBY STATION', stop_lat: '41.468429', stop_lon: '-81.572468', location_type: '0', parent_station: '' },
+    { stop_id: 'a2', stop_name: 'ASHBY STATION', stop_lat: '41.468585', stop_lon: '-81.572731', location_type: '0', parent_station: '' },
+    { stop_id: 'far', stop_name: 'ASHBY STATION', stop_lat: '41.60', stop_lon: '-81.70', location_type: '0', parent_station: '' }
+  ],
+  routes: [{ route_id: 'BL', route_short_name: '67', route_long_name: 'Blue Line', route_type: '0', route_color: '15BEF0' }],
+  trips: [{ route_id: 'BL', trip_id: 't', direction_id: '0' }],
+  stopTimes: [
+    { trip_id: 't', stop_id: 'a1', stop_sequence: '1' },
+    { trip_id: 't', stop_id: 'a2', stop_sequence: '2' },
+    { trip_id: 't', stop_id: 'far', stop_sequence: '3' }
+  ]
+};
+const lrtCfg = { id: 'gcrta', agency: 'gcrta', railTypes: new Set([0, 1, 2]), labelFor: () => 'Bl' };
+
+test('mergeByNameMeters collapses co-located same-name platforms but not distant ones', () => {
+  const merged = buildRailArtifacts(lrtGtfs, { ...lrtCfg, mergeByNameMeters: 300 });
+  // a1+a2 merge into one; "far" (same name, ~15km away) stays separate -> 2 stations
+  assert.strictEqual(merged.stations.length, 2);
+  const both = merged.stations.find(s => merged.data.stations[s.id].length === 2);
+  assert.deepStrictEqual(merged.data.stations[both.id], ['a1', 'a2']);
+  // Without the option, all three remain distinct.
+  const unmerged = buildRailArtifacts(lrtGtfs, lrtCfg);
+  assert.strictEqual(unmerged.stations.length, 3);
+});
+
+test('titleCase normalizes SHOUTY names in station list and dest names', () => {
+  const { stations, data } = buildRailArtifacts(lrtGtfs, { ...lrtCfg, mergeByNameMeters: 300, titleCase: true });
+  assert.ok(stations.every(s => s.name === 'Ashby Station'));
+  assert.ok(Object.values(data.names).every(n => n === 'Ashby Station'));
+});

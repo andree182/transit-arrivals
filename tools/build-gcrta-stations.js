@@ -19,7 +19,10 @@ function main() {
   const dir = process.env.GTFS_DIR || '/tmp/gcrta-gtfs';
   const gtfs = readDir(dir);
   const { stations, data } = buildRailArtifacts(gtfs, {
-    id: 'gcrta', agency: 'gcrta', railTypes: new Set([0, 1, 2]), labelFor
+    id: 'gcrta', agency: 'gcrta', railTypes: new Set([0, 1, 2]), labelFor,
+    // GCRTA light rail models each directional platform as a separate parent-less
+    // stop; merge the same-named pair at each station, and de-SHOUT the GTFS names.
+    mergeByNameMeters: 300, titleCase: true
   });
   fs.writeFileSync(path.join(__dirname, '../src/pkjs/lib/gcrta.stations.json'), JSON.stringify(stations));
   fs.writeFileSync(path.join(__dirname, '../cta-proxy/src/agencies/gcrta-data.json'), JSON.stringify(data));
