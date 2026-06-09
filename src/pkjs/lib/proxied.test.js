@@ -1,6 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const cta = require('./cta');
+const proxied = require('./proxied');
+
+var cta = proxied.makeProxiedAgency({ id: 'cta', name: 'CTA' });
 
 function mockXHR(responses) {
   global.XMLHttpRequest = function () {
@@ -39,14 +41,14 @@ test('getArrivals assembles the common model from proxy responses', () => new Pr
 test('merges suspensions as synthetic banner lines when no trains run', () => new Promise((resolve) => {
   mockXHR({
     '/cta/arrivals': { epoch: 1000, model: [] },
-    '/cta/alerts': { alerts: [], suspensions: [{ line: 'Br', reason: 'Suspended A-B' }] }
+    '/cta/alerts': { alerts: [], suspensions: [{ line: 'Br', color: [98, 54, 27], reason: 'Suspended A-B' }] }
   });
   cta.getArrivals(STATION, function (err, res) {
     assert.strictEqual(err, null);
     var banner = res.model.find(function (m) { return m.line === 'Br'; });
     assert.deepStrictEqual(banner.directions, []);
     assert.strictEqual(banner.notice, 'Suspended A-B');
-    assert.deepStrictEqual(banner.color, [98, 54, 27]);   // Brown brand color, not gray
+    assert.deepStrictEqual(banner.color, [98, 54, 27]);   // color came from the proxy suspension
     resolve();
   });
 }));
