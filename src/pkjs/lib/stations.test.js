@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { nearestStation, getStation, displayName } = require('./stations');
+const stations = require('./stations');
+const { nearestStation, getStation, displayName } = stations;
 
 test('nearestStation returns the closest by haversine', () => {
   // Times Sq-42 (40.7559,-73.9871) vs Astoria-Ditmars (40.7752,-73.9120)
@@ -73,4 +74,14 @@ test('World Trade Center PATH attaches to BOTH subway complexes', () => {
 test('a merged PATH platform is not also a standalone pin', () => {
   const all = require('./stations.data.json');
   assert.strictEqual(all.filter((s) => s.id === '26722').length, 0);
+});
+
+test('every directory entry is tagged with an agency', () => {
+  stations._db.forEach((s) => { assert.strictEqual(s.agency, 'mta'); });
+});
+
+test('getStation returns an mta-tagged station', () => {
+  const st = stations.getStation('R16');
+  assert.ok(st);
+  assert.strictEqual(st.agency, 'mta');
 });
