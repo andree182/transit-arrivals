@@ -1329,7 +1329,14 @@ static void init(void) {
   app_message_register_inbox_received(inbox_received);
   app_message_register_outbox_sent(outbox_sent);
   app_message_register_outbox_failed(outbox_failed);
-  app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
+  // Right-size the AppMessage buffers instead of asking for the 8200-byte maximum
+  // each (~16 KB of heap). The largest inbound payload is a Bundle (<=808 B),
+  // an Alerts string (<=700 B), or a FavSet blob (<=882 B); the largest outbound
+  // is a FavSync blob (<=882 B). Reserving the full maximum starved the flip
+  // animation on emery (200x228 → large per-glyph cell buffers), exhausting the
+  // 78 KB app heap and faulting on big complex stations. 2 KB / 1.25 KB leaves
+  // generous framing headroom while freeing ~13 KB.
+  app_message_open(2048, 1280);
 
   tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
   s_poll = app_timer_register(30000, poll_cb, NULL);

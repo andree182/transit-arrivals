@@ -32,7 +32,10 @@ function refreshFor(station) {
     Pebble.sendAppMessage(
       { Bundle: Array.prototype.slice.call(bytes) },
       function () {
-        Pebble.sendAppMessage({ Alerts: (res.alerts || []).join('\n') });
+        // The watch stores alerts in a 700-byte buffer and the AppMessage inbox
+        // is right-sized (2 KB), so cap the string here — an over-long alert
+        // would otherwise be dropped by the inbox instead of arriving truncated.
+        Pebble.sendAppMessage({ Alerts: (res.alerts || []).join('\n').slice(0, 690) });
       }
     );
   });
