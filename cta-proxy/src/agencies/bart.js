@@ -89,3 +89,34 @@ export function transformETD(etdJson, now) {
   }
   return { epoch: now, model: buildModel(byLabel) };
 }
+
+function etdUrl(station, env) {
+  return 'https://api.bart.gov/api/etd.aspx?cmd=etd&json=y&orig=' + encodeURIComponent(station)
+    + '&key=' + encodeURIComponent(env.BART_KEY || 'MW9S-E7SL-26DU-VV8V');
+}
+
+// Hybrid: ETD primary; GTFS-RT TripUpdates fallback (colored via BART_TRIPS) when ETD fails/empty.
+export async function arrivals(env, station, now) {
+  const t = now ?? nowSecs();
+  try {
+    const data = await fetchJSON(etdUrl(station, env));
+    const m = transformETD(data, t);
+    if (m.model.length) return m;
+  } catch (e) { /* fall through to GTFS-RT */ }
+  try {
+    const stops = BART_STOPS[station];
+    if (stops && stops.length) {
+      const buf = await fetchBuf('https://api.bart.gov/gtfsrt/tripupdate.aspx');
+      return transformRT(extractTripUpdates(buf), new Set(stops), BART_TRIPS, t);
+    }
+  } catch (e) { /* fall through to empty */ }
+  return { epoch: t, model: [] };
+}
+
+export async function alerts(env, routes) {
+  try {
+    const data = await fetchJSON('https://api.bart.gov/api/bsa.aspx?cmd=bsa&json=y&key='
+      + encodeURIComponent(env.BART_KEY || 'MW9S-E7SL-26DU-VV8V'));
+    return transformAlerts(data);
+  } catch (e) { return { alerts: [], suspensions: [] }; }
+}
