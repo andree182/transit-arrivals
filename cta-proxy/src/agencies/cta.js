@@ -109,6 +109,7 @@ export function transformAlerts(routes, alerts, wantLabels) {
 }
 
 export async function arrivals(env, station, now) {
+  if (!/^\d{5}$/.test(String(station || ''))) throw new Error('bad mapid: ' + station);
   const u = `https://lapi.transitchicago.com/api/1.0/ttarrivals.aspx?key=${env.CTA_KEY}&mapid=${station}&max=12&outputType=JSON`;
   const data = await fetchJSON(u);
   if (!data?.ctatt || data.ctatt.errCd !== '0') throw new Error('cta errCd ' + (data?.ctatt?.errCd));

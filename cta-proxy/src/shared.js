@@ -17,7 +17,7 @@ export async function cached(request, ctx, ttl, build) {
   return resolved;
 }
 export async function fetchJSON(url, init) {
-  const r = await fetch(url, { cf: { cacheTtl: 0 }, ...(init || {}) });
+  const r = await fetch(url, { ...(init || {}), cf: { cacheTtl: 0 } });
   if (!r.ok) throw new Error('upstream ' + r.status);
   return r.json();
 }

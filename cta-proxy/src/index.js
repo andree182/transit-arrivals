@@ -16,7 +16,7 @@ export default {
       const agency = AGENCIES[m[1]];
       if (!agency) return json({ error: 'unknown agency' }, 0);
       if (m[2] === 'arrivals') {
-        const station = url.searchParams.get('station');
+        const station = url.searchParams.get('station') || url.searchParams.get('mapid');
         if (!station) return json({ error: 'missing station' }, 0);
         return cached(request, ctx, ARR_TTL, async () => agency.arrivals(env, station, nowSecs()))
           .catch((e) => { console.log(JSON.stringify({ msg: 'arrivals fail', agency: m[1], err: String(e) })); return json({ epoch: nowSecs(), model: [] }, 0); });
