@@ -152,7 +152,7 @@ test('encodes a non-ASCII station name (middle dot) as valid UTF-8', () => {
 test('encodeBundle carries notice for a directions:[] line (El/BSL path)', () => {
   const epoch = 1781028000;
   const lines = [{ line: 'L', color: [0, 124, 196], directions: [],
-                   notice: 'No live arrivals — SEPTA doesn’t publish them' }];
+                   notice: "No live arrivals - SEPTA doesn't publish them" }];
   const buf = encodeBundle('septa-8th-market', '8th & Market', lines, epoch);
   // Decode just enough to find the line block: skip version(1)+epoch(4)+name(39)+id(11)+count(1)
   let p = 1 + 4 + 39 + 11 + 1;
@@ -166,5 +166,5 @@ test('encodeBundle carries notice for a directions:[] line (El/BSL path)', () =>
   assert.ok(n > 0, 'notice length must be > 0');
   const bytes = Array.from(buf.slice(p, p + n));
   const decoded = Buffer.from(bytes).toString('latin1');
-  assert.ok(/No live arrivals/.test(decoded), 'notice text must be present');
+  assert.strictEqual(decoded, "No live arrivals - SEPTA doesn't publish them", 'notice round-trips exactly');
 });

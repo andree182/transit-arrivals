@@ -141,7 +141,7 @@ export function transformRT(trips, station, stopNames, now) {
   return model;
 }
 
-const EL_NOTICE = "No live arrivals — SEPTA doesn't publish them";
+const EL_NOTICE = "No live arrivals - SEPTA doesn't publish them";
 
 export function elLines(labels) {
   const seen = new Set();

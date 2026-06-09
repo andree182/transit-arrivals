@@ -106,7 +106,7 @@ test('elLines emits notice lines with empty directions', () => {
   const l = out.find(x => x.line === 'L');
   expect(l.color).toEqual([0, 124, 196]);
   expect(l.directions).toEqual([]);
-  expect(l.notice).toMatch(/No live arrivals/);
+  expect(l.notice).toBe("No live arrivals - SEPTA doesn't publish them");
   expect(elLines([])).toEqual([]);
 });
 
@@ -133,7 +133,7 @@ test('resolveModel merges rr + rt + el for a multi-mode hub', async () => {
   expect(model.find(l => l.line === 'M')).toBeTruthy();     // RT
   const el = model.find(l => l.line === 'L');              // El notice
   expect(el.directions).toEqual([]);
-  expect(el.notice).toMatch(/No live arrivals/);
+  expect(el.notice).toBe("No live arrivals - SEPTA doesn't publish them");
 });
 
 test('arrivals returns empty model for unknown slug', async () => {
