@@ -3,6 +3,8 @@ import { extractTripUpdates } from '../gtfsrt.js';
 import BART_STOPS from './bart-stops.json';   // { abbr: [stopId,...] }
 import BART_TRIPS from './bart-trips.json';    // { tripId: {c,h,d} }
 
+const BART_DEMO_KEY = 'MW9S-E7SL-26DU-VV8V';   // BART's public demo key; used only if no BART_KEY secret
+
 const LABEL_COLOR = {
   Yl: [255, 255, 51], Or: [255, 153, 51], Gn: [51, 153, 51],
   Rd: [255, 0, 0], Bl: [0, 153, 204], Gy: [176, 190, 199]
@@ -41,6 +43,8 @@ export function transformAlerts(bsaJson) {
   const list = bsaJson?.root?.bsa;
   const arr = Array.isArray(list) ? list : (list ? [list] : []);
   const out = { alerts: [], suspensions: [] };
+  // BART advisories are system-wide, so we emit at most ONE 'BART' suspension banner
+  // (multiple identical banners would clutter the watch); all advisory texts still go to alerts[].
   let suspended = false;
   for (const b of arr) {
     const text = cdata(b.sms_text) || cdata(b.description);
@@ -92,7 +96,7 @@ export function transformETD(etdJson, now) {
 
 function etdUrl(station, env) {
   return 'https://api.bart.gov/api/etd.aspx?cmd=etd&json=y&orig=' + encodeURIComponent(station)
-    + '&key=' + encodeURIComponent(env.BART_KEY || 'MW9S-E7SL-26DU-VV8V');
+    + '&key=' + encodeURIComponent(env.BART_KEY || BART_DEMO_KEY);
 }
 
 // Hybrid: ETD primary; GTFS-RT TripUpdates fallback (colored via BART_TRIPS) when ETD fails/empty.
@@ -101,6 +105,8 @@ export async function arrivals(env, station, now) {
   try {
     const data = await fetchJSON(etdUrl(station, env));
     const m = transformETD(data, t);
+    // Empty model (no trains, or an all-cancelled board) intentionally falls through to the
+    // GTFS-RT path; if that's also empty the result is the correct {model:[]}.
     if (m.model.length) return m;
   } catch (e) { /* fall through to GTFS-RT */ }
   try {
@@ -116,7 +122,7 @@ export async function arrivals(env, station, now) {
 export async function alerts(env, routes) {
   try {
     const data = await fetchJSON('https://api.bart.gov/api/bsa.aspx?cmd=bsa&json=y&key='
-      + encodeURIComponent(env.BART_KEY || 'MW9S-E7SL-26DU-VV8V'));
+      + encodeURIComponent(env.BART_KEY || BART_DEMO_KEY));
     return transformAlerts(data);
   } catch (e) { return { alerts: [], suspensions: [] }; }
 }

@@ -87,14 +87,9 @@ test('arrivals falls back to GTFS-RT when ETD is empty', async () => {
     if (call === 1) return { ok: true, json: async () => ({ root: { station: [{ etd: [] }] } }) };  // ETD empty
     return { ok: true, arrayBuffer: async () => enc.buffer };                                       // tripupdate.pb
   });
-  // Asserts the fallback PATH is taken (2 fetches). Color/dest mapping is covered by transformRT's own test;
-  // the bundled BART_STOPS map must contain station 'MONT' for the fallback to fire (real data, Task 7) — for
-  // this unit test, seed it via a tiny module that the test can rely on: we instead assert call count only when
-  // the real map has MONT. If the placeholder map is still '{}', expect call === 1 (no fallback) — so run this
-  // test AFTER Task 7, or temporarily add {"MONT":["MONTPLAT"]} to bart-stops.json. Use the latter here:
   const env = { BART_KEY: 'k' };
   await (await import('../src/agencies/bart.js')).arrivals(env, 'MONT', NOW);
-  expect(call).toBeGreaterThanOrEqual(1);
+  expect(call).toBe(2);   // ETD (empty) + GTFS-RT fallback fetch
 });
 
 // Minimal protobuf encoder for one TripUpdate (matches Plan A field numbers).
