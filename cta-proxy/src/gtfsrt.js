@@ -1,9 +1,7 @@
 import { readFields } from './pbf.js';
 
 function utf8(buf, s, e) {
-  let out = '';
-  for (let i = s; i < e; i++) out += String.fromCharCode(buf[i]);
-  try { return decodeURIComponent(escape(out)); } catch { return out; }
+  return new TextDecoder().decode(buf.subarray(s, e));
 }
 
 // One row per trip_update: { routeId, tripId, directionId, stops:[{stopId,time}] }.
@@ -61,7 +59,7 @@ export function extractAlerts(buf) {
           }
         } else if (af.fieldNum === 7 && af.wireType === 0) {          // effect
           effect = af.value;
-        } else if (af.fieldNum === 10 && af.wireType === 2 && !header) { // header_text (TranslatedString)
+        } else if (af.fieldNum === 10 && af.wireType === 2) { // header_text (TranslatedString)
           for (const tf of readFields(buf, af.start, af.end)) {
             if (tf.fieldNum === 1 && tf.wireType === 2) {             // translation
               for (const sf of readFields(buf, tf.start, tf.end)) {

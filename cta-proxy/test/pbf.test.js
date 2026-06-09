@@ -21,3 +21,13 @@ test('readFields parses a varint field and a length-delimited field', () => {
   expect(fields[0]).toMatchObject({ fieldNum: 1, wireType: 0, value: 5 });
   expect(fields[1]).toMatchObject({ fieldNum: 2, wireType: 2, start: 4, end: 7 });
 });
+
+test('readVarint handles values > 2^32 (int64 timestamps)', () => {
+  const n = 4294967297; // 2^32 + 1
+  const bytes = [];
+  let v = n;
+  while (v > 0x7f) { bytes.push((v & 0x7f) | 0x80); v = Math.floor(v / 128); }
+  bytes.push(v);
+  const pos = { i: 0 };
+  expect(readVarint(new Uint8Array(bytes), pos)).toBe(n);
+});
