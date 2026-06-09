@@ -135,3 +135,9 @@ test('nearest station to Center City Philadelphia is a SEPTA station', () => {
   const s = stations.nearestStation(39.9526, -75.1652);
   assert.strictEqual(s.agency, 'septa');
 });
+
+test('nearest station to downtown Cleveland is a GCRTA stop', () => {
+  // Tower City-Public Sq Stn: 41.4975, -81.6940
+  const s = nearestStation(41.4975, -81.6940);
+  assert.strictEqual(s.agency, 'gcrta');
+});
