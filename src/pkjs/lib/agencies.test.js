@@ -27,3 +27,10 @@ test('registry resolves the proxied CTA agency', () => {
   assert.strictEqual(c.transport, 'proxied');
   assert.strictEqual(typeof c.getArrivals, 'function');
 });
+
+test('registry resolves the proxied WMATA agency', () => {
+  const w = agencies.get('wmata');
+  assert.strictEqual(w.id, 'wmata');
+  assert.strictEqual(w.transport, 'proxied');
+  assert.strictEqual(typeof w.getArrivals, 'function');
+});

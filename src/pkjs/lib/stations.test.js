@@ -102,3 +102,8 @@ test('nearest station in midtown Manhattan is an MTA station', () => {
   const st = stations.nearestStation(40.7549, -73.9870);    // Times Sq area
   assert.strictEqual(st.agency, 'mta');
 });
+
+test('nearest station in DC is a WMATA station', () => {
+  const st = stations.nearestStation(38.8983, -77.0281);   // Metro Center
+  assert.strictEqual(st.agency, 'wmata');
+});
