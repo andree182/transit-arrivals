@@ -140,6 +140,39 @@ test('excludes alerts for unrequested lines', () => {
 
 // Task 3: arrivals/alerts wrappers test
 
+// Task 5: real fixture tests
+
+import realPred from './fixtures/mbta-predictions.json';
+import realAlerts from './fixtures/mbta-alerts.json';
+
+test('real predictions fixture transforms to a valid model', () => {
+  const { model } = transform(realPred, NOW);
+  // every line is a known label with a 3-tuple color and well-formed directions
+  for (const l of model) {
+    expect(['Rd', 'Or', 'Bl', 'Gn', 'M']).toContain(l.line);
+    expect(l.color).toHaveLength(3);
+    for (const d of l.directions) {
+      expect(d.label).toBe('');
+      expect(Array.isArray(d.times)).toBe(true);
+      expect(d.times.length).toBeLessThanOrEqual(6);
+      expect(d.exp).toHaveLength(d.times.length);
+      // times sorted ascending
+      for (let i = 1; i < d.times.length; i++) expect(d.times[i]).toBeGreaterThanOrEqual(d.times[i - 1]);
+    }
+  }
+  // Park St is a Red + Green hub; if predictions exist, at least one of those lines shows.
+  if (realPred.data.length) {
+    expect(model.some(l => l.line === 'Rd' || l.line === 'Gn')).toBe(true);
+  }
+});
+
+test('real alerts fixture transforms without throwing', () => {
+  const out = transformAlerts(realAlerts, ['Rd', 'Gn']);
+  expect(Array.isArray(out.alerts)).toBe(true);
+  expect(Array.isArray(out.suspensions)).toBe(true);
+  for (const s of out.suspensions) expect(s.color).toHaveLength(3);
+});
+
 test('arrivals/alerts are exported async functions', () => {
   // imported lazily so the file still parses if not yet defined
   return import('../src/agencies/mbta.js').then(m => {
