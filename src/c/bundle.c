@@ -48,6 +48,7 @@ bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
         if (code > 4) code = 4;
         strcpy(D->dirLabel, LEGACY_DIR_WORD[code]);
       }
+      if (i + 1 > len) return false;
       D->n = p[i++];
       if (D->n > MAX_ARR) D->n = MAX_ARR;
       if (i + (size_t)D->n * 2 > len) return false;

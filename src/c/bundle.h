@@ -16,5 +16,5 @@ typedef struct {
   LineView lines[MAX_LINES];
 } Bundle;
 
-// Returns true on a well-formed v3 or v4 bundle.
+// Returns true on a well-formed v3–v6 bundle.
 bool bundle_decode(const uint8_t *p, size_t len, Bundle *out);
