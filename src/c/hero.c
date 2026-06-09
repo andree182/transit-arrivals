@@ -120,11 +120,14 @@ static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, co
   // 144x168 and round, smaller fonts keep the reason off the station footer.
   bool tall = bounds.size.h >= 200;
 
-  // "SUSPENDED" headline under the bullet.
+  // Headline under the bullet. "NO DATA" when the agency publishes no real-time
+  // for this line (e.g. SEPTA El/BSL); "SUSPENDED" for an actual service
+  // suspension (MTA). Keyed off the notice prefix set on the proxy side.
+  const char *headline = (strncmp(L->notice, "No live arrivals", 16) == 0) ? "NO DATA" : "SUSPENDED";
   int sus_h = tall ? 30 : 22;
   int sus_top = disc.y + r + (int)(6 * SY);
   graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorYellow, GColorWhite));
-  graphics_draw_text(ctx, "SUSPENDED",
+  graphics_draw_text(ctx, headline,
     fonts_get_system_font(tall ? FONT_KEY_GOTHIC_24_BOLD : FONT_KEY_GOTHIC_18_BOLD),
     GRect(4, sus_top, bounds.size.w - 8, sus_h), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 
