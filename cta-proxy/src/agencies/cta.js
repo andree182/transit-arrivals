@@ -110,7 +110,14 @@ export function transformAlerts(routes, alerts, wantLabels) {
 
 export async function arrivals(env, station, now) {
   if (!/^\d{5}(,\d{5}){0,3}$/.test(String(station || ''))) throw new Error('bad mapid: ' + station);
-  const u = `https://lapi.transitchicago.com/api/1.0/ttarrivals.aspx?key=${env.CTA_KEY}&mapid=${station}&max=12&outputType=JSON`;
+  // ttarrivals takes multiple stations as REPEATED mapid params (mapid=A&mapid=B),
+  // not a comma-joined value — a merged station complex passes "40070,40560,40850".
+  const ids = String(station).split(',');
+  const params = ids.map(id => 'mapid=' + encodeURIComponent(id)).join('&');
+  // `max` is a TOTAL cap across all stations; for a multi-station complex a low
+  // cap lets frequent lines (Blue/Red) crowd out the others, so scale it up.
+  const max = ids.length > 1 ? 60 : 12;
+  const u = `https://lapi.transitchicago.com/api/1.0/ttarrivals.aspx?key=${env.CTA_KEY}&${params}&max=${max}&outputType=JSON`;
   const data = await fetchJSON(u);
   if (!data?.ctatt || data.ctatt.errCd !== '0') throw new Error('cta errCd ' + (data?.ctatt?.errCd));
   return transform(data.ctatt, now ?? nowSecs());
