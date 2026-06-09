@@ -1,3 +1,4 @@
+var cta = require('./cta');
 var stations = require('./stations');
 var linesLib = require('./lines');
 var gtfsrt = require('./gtfsrt');
@@ -114,7 +115,7 @@ var MTA = {
   _directionWord: directionWord
 };
 
-var REGISTRY = { mta: MTA };
+var REGISTRY = { mta: MTA, cta: cta };
 function get(id) { return REGISTRY[id] || MTA; }   // default to MTA for legacy favorites
 
 module.exports = { get: get, _registry: REGISTRY };

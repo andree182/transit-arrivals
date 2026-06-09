@@ -20,3 +20,10 @@ test('registry exposes mta with a direct transport', () => {
 test('get() defaults to mta for an unknown agency id', () => {
   assert.strictEqual(agencies.get('zzz').id, 'mta');
 });
+
+test('registry resolves the proxied CTA agency', () => {
+  const c = agencies.get('cta');
+  assert.strictEqual(c.id, 'cta');
+  assert.strictEqual(c.transport, 'proxied');
+  assert.strictEqual(typeof c.getArrivals, 'function');
+});

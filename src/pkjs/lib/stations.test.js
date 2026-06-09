@@ -77,11 +77,28 @@ test('a merged PATH platform is not also a standalone pin', () => {
 });
 
 test('every directory entry is tagged with an agency', () => {
-  stations._db.forEach((s) => { assert.strictEqual(s.agency, 'mta'); });
+  stations._db.forEach((s) => { assert.ok(s.agency, 'missing agency on ' + s.id); });
 });
 
 test('getStation returns an mta-tagged station', () => {
   const st = stations.getStation('R16');
   assert.ok(st);
+  assert.strictEqual(st.agency, 'mta');
+});
+
+test('CTA stations are present and tagged', () => {
+  const clark = stations.getStation('40380');
+  assert.ok(clark);
+  assert.strictEqual(clark.agency, 'cta');
+  assert.ok(clark.lines.indexOf('Bl') >= 0);
+});
+
+test('nearest station near the Loop is a CTA station', () => {
+  const st = stations.nearestStation(41.8857, -87.6309);   // Clark/Lake
+  assert.strictEqual(st.agency, 'cta');
+});
+
+test('nearest station in midtown Manhattan is an MTA station', () => {
+  const st = stations.nearestStation(40.7549, -73.9870);    // Times Sq area
   assert.strictEqual(st.agency, 'mta');
 });

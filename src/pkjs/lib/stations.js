@@ -1,4 +1,5 @@
 var MTA_DB = require('./stations.data.json');
+var CTA_DB = require('./cta.stations.json');
 
 function tag(list, agency) {
   return list.map(function (s) {
@@ -10,8 +11,8 @@ function tag(list, agency) {
   });
 }
 
-// Concatenation of every agency's on-phone directory. A later task appends CTA here.
-var DB = tag(MTA_DB, 'mta');
+// Concatenation of every agency's on-phone directory.
+var DB = tag(MTA_DB, 'mta').concat(tag(CTA_DB, 'cta'));
 
 function haversine(aLat, aLon, bLat, bLon) {
   var R = 6371000, toRad = Math.PI / 180;
