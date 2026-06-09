@@ -40,3 +40,17 @@ test('upstream failure degrades to empty model (not 500)', async () => {
   expect(r.status).toBe(200);
   expect((await r.json())).toEqual(expect.objectContaining({ model: [] }));
 });
+test('accepts comma-joined mapid complex (Jackson/Library) as station param', async () => {
+  globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ ctatt: { errCd: '0', eta: [] } }), { status: 200 }));
+  const r = await call('/cta/arrivals?station=40070%2C40560%2C40850');
+  const body = await r.json();
+  expect(body.error).toBeUndefined();
+  expect(body).toHaveProperty('model');
+});
+test('accepts comma-joined mapid complex via ?mapid= (Washington/Lake)', async () => {
+  globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ ctatt: { errCd: '0', eta: [] } }), { status: 200 }));
+  const r = await call('/cta/arrivals?mapid=40370%2C41660');
+  const body = await r.json();
+  expect(body.error).toBeUndefined();
+  expect(body).toHaveProperty('model');
+});
