@@ -1,4 +1,5 @@
-import { fetchJSON, nowSecs } from '../shared.js';
+import { fetchJSON, fetchBuf, nowSecs } from '../shared.js';
+import { extractAlerts } from '../gtfsrt.js';
 
 export const ROUTE_MAP = {
   RED:  { label: 'Rd', color: [228, 0, 43] },
@@ -10,6 +11,48 @@ export const ROUTE_MAP = {
 const LABEL_COLOR = Object.fromEntries(Object.values(ROUTE_MAP).map(v => [v.label, v.color]));
 function colorForLabel(l) { return LABEL_COLOR[l] || [128, 128, 128]; }
 function norm(s) { return String(s || '').trim().toUpperCase(); }
+
+// MARTA GTFS-RT service-alerts feed (verified 2026-06-09: HTTP 200, protobuf, NO key required).
+const ALERTS_URL = 'https://gtfs-rt.itsmarta.com/TMGTFSRealTimeWebService/alert/alerts.pb';
+
+// informed_entity.route_id -> display label. MARTA rail GTFS route_ids are numeric;
+// names included defensively in case the alerts feed uses RED/GOLD/BLUE/GREEN instead.
+const GTFS_ROUTE_TO_LABEL = {
+  '26987': 'Rd', RED:   'Rd',
+  '26985': 'Gd', GOLD:  'Gd',
+  '26984': 'Bl', BLUE:  'Bl',
+  '26986': 'Gn', GREEN: 'Gn'
+};
+
+// Resolve a GTFS route_id (numeric, name, or e.g. "RED LINE") to a label, or null.
+function labelForRoute(routeId) {
+  const k = norm(routeId);
+  if (GTFS_ROUTE_TO_LABEL[k]) return GTFS_ROUTE_TO_LABEL[k];
+  for (const name of ['RED', 'GOLD', 'BLUE', 'GREEN']) {
+    if (k.includes(name)) return GTFS_ROUTE_TO_LABEL[name];
+  }
+  return null;
+}
+
+// rows: output of extractAlerts() -> [{ routeIds:[], stopIds:[], header, effect }].
+// wantLabels: requested display labels, e.g. ['Rd','Gn'].
+// Returns { alerts:[str], suspensions:[{ line, color, reason }] } per the pinned contract.
+export function transformAlerts(rows, wantLabels) {
+  const want = new Set((wantLabels || []).map(String));
+  const alerts = [], suspensions = [];
+  for (const a of (Array.isArray(rows) ? rows : [])) {
+    const labels = [...new Set((a.routeIds || []).map(labelForRoute).filter(Boolean))];
+    const hit = labels.filter(l => want.has(l));
+    if (!hit.length) continue;                          // not a requested line -> drop
+    const header = String(a.header || '').trim();
+    if (header) alerts.push(header);
+    const isSuspension = a.effect === 1 || /suspend|no service/i.test(header);
+    if (isSuspension) {
+      for (const l of hit) suspensions.push({ line: l, color: colorForLabel(l), reason: header });
+    }
+  }
+  return { alerts, suspensions };
+}
 
 // rows: flat JSON array from MARTA traindata endpoint.
 // station: MARTA STATION name to filter (exact, case-insensitive).
@@ -55,5 +98,9 @@ export async function arrivals(env, station, now) {
   return transform(data, station, now ?? nowSecs());
 }
 
-// MARTA v1: trains only — no alerts endpoint (spec §2b)
-export async function alerts() { return { alerts: [], suspensions: [] }; }
+// Fetch + decode the GTFS-RT service-alerts feed and filter to the requested lines.
+export async function alerts(env, routes) {
+  const buf = await fetchBuf(ALERTS_URL);   // no apiKey required for gtfs-rt.itsmarta.com
+  const rows = extractAlerts(buf);
+  return transformAlerts(rows, routes);
+}
