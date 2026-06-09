@@ -4,8 +4,9 @@ import * as wmata from './agencies/wmata.js';
 import * as marta from './agencies/marta.js';
 import * as lametro from './agencies/lametro.js';
 import * as bart from './agencies/bart.js';
+import * as mbta from './agencies/mbta.js';
 
-const AGENCIES = { cta, wmata, marta, lametro, bart };
+const AGENCIES = { cta, wmata, marta, lametro, bart, mbta };
 const ARR_TTL = 25, ALR_TTL = 60;
 
 export default {
