@@ -62,3 +62,24 @@ test('reports no-trains (code 4) when model and suspensions are empty', () => ne
   mockXHR({ '/cta/arrivals': { epoch: 1000, model: [] }, '/cta/alerts': { alerts: [], suspensions: [] } });
   cta.getArrivals(STATION, function (err) { assert.strictEqual(err, 4); resolve(); });
 }));
+
+test('a stalled request times out and reports offline (code 3)', () => new Promise((resolve) => {
+  // A server that accepts the connection but never responds: onload/onerror
+  // never fire. Only xhr.timeout + ontimeout get the rider out of the spinner.
+  var sawTimeout = false;
+  global.XMLHttpRequest = function () {
+    this.open = function () {};
+    this.send = function () {
+      var self = this;
+      setTimeout(function () {
+        if (typeof self.ontimeout === 'function' && self.timeout > 0) { sawTimeout = true; self.ontimeout(); }
+        else if (self.onerror) self.onerror(new Error('stalled'));
+      }, 0);
+    };
+  };
+  cta.getArrivals(STATION, function (err) {
+    assert.strictEqual(err, 3);
+    assert.ok(sawTimeout, 'getJSON must set xhr.timeout and ontimeout');
+    resolve();
+  });
+}));

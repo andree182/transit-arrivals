@@ -34,10 +34,10 @@ function putU32(arr, v) { arr.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, 
 
 function encodeBundle(stationId, stationName, lines, epochBase) {
   var b = [];
-  b.push(7);                       // version
+  b.push(8);                       // version
   putU32(b, epochBase);
   putStr(b, stationName, 39);
-  putStr(b, stationId, 11);
+  putStr(b, stationId, 23);        // v8: fits a 4-mapid CTA complex (4*5 + 3 commas)
   b.push(lines.length & 0xff);
   lines.forEach(function (ln) {
     putStr(b, ln.line, 2);

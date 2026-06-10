@@ -1,4 +1,6 @@
-var ID_MAX = 15, NAME_MAX = 47, LABEL_MAX = 23, AGENCY_MAX = 11;
+// ID_MAX 23: a CTA complex id is up to 4 comma-joined 5-digit mapids
+// ("40070,40560,40850" at Jackson/Library). Must stay = FAV_ID_LEN - 1 (C side).
+var ID_MAX = 23, NAME_MAX = 47, LABEL_MAX = 23, AGENCY_MAX = 11;
 
 function pushStr(arr, s, max) {
   var bytes = [];

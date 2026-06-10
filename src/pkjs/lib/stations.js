@@ -43,10 +43,10 @@ function haversine(aLat, aLon, bLat, bLon) {
 }
 
 // ~100 km from the nearest station in ANY agency's directory (NYC metro + PATH,
-// Chicago CTA, …). Beyond it the user isn't near a covered system at all and we
-// fall back to the default hub rather than a meaningless thousands-of-miles pin.
+// Chicago CTA, …). Beyond it the user isn't near a covered system at all:
+// nearestStation returns null and the watch shows the honest "no covered
+// station nearby" card (error 2) instead of a fake Times Sq board.
 var SERVICE_RADIUS_M = 100000;
-var DEFAULT_STATION_ID = 'R16';   // Times Sq-42 St — the canonical fallback hub
 
 // Distance to a station: for a multi-entrance complex, the distance to its
 // CLOSEST platform (s.pts), so a spread-out complex (14 St: 1/2/3 at 7 Av, F/M/L
@@ -71,9 +71,8 @@ function nearestStation(lat, lon) {
     var d = stationDist(lat, lon, DB[i]);
     if (d < bestD) { bestD = d; best = DB[i]; }
   }
-  // Outside the service area (e.g. a user in LA): default to Times Square rather
-  // than the meaningless "closest" station thousands of miles away.
-  if (!best || bestD > SERVICE_RADIUS_M) return getStation(DEFAULT_STATION_ID) || best;
+  // Outside the service area (e.g. a user in Denver): no covered system nearby.
+  if (!best || bestD > SERVICE_RADIUS_M) return null;
   return best;
 }
 

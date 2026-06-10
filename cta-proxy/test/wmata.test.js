@@ -1,5 +1,5 @@
-import { expect, test } from 'vitest';
-import { transform, transformAlerts, ROUTE_MAP } from '../src/agencies/wmata.js';
+import { expect, test, vi } from 'vitest';
+import { transform, transformAlerts, arrivals, alerts, ROUTE_MAP } from '../src/agencies/wmata.js';
 import arr from './fixtures/wmata-arrivals.json';
 import inc from './fixtures/wmata-incidents.json';
 const NOW = 1719853200;
@@ -32,4 +32,16 @@ test('alert affecting only unrequested lines is excluded', () => {
   const out = transformAlerts(inc, ['Rd']);
   expect(out.alerts.some(a => /single tracking/.test(a))).toBe(true);   // RD requested
   expect(out.suspensions.length).toBe(0);                // BL/OR suspension not requested
+});
+test('arrivals without WMATA_KEY returns empty model and never fetches', async () => {
+  globalThis.fetch = vi.fn(async () => { throw new Error('no live call'); });
+  const out = await arrivals({}, 'A01', NOW);            // env has no WMATA_KEY
+  expect(out).toEqual({ epoch: NOW, model: [] });
+  expect(globalThis.fetch).not.toHaveBeenCalled();       // no ?api_key=undefined upstream
+});
+test('alerts without WMATA_KEY returns empty alerts and never fetches', async () => {
+  globalThis.fetch = vi.fn(async () => { throw new Error('no live call'); });
+  const out = await alerts({}, ['Rd']);
+  expect(out).toEqual({ alerts: [], suspensions: [] });
+  expect(globalThis.fetch).not.toHaveBeenCalled();
 });

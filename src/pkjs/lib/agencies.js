@@ -40,6 +40,9 @@ function fetchFeed(url, cb) {
     else cb(new Error('HTTP ' + xhr.status));
   };
   xhr.onerror = function () { cb(new Error('network')); };
+  // Stalled connections fire neither onload nor onerror; bound the wait.
+  xhr.timeout = 15000;
+  xhr.ontimeout = function () { cb(new Error('timeout')); };
   xhr.send();
 }
 
@@ -106,6 +109,8 @@ function getArrivals(station, cb) {
     alertsDone = true; finish();
   };
   ax.onerror = function () { console.log('[mta] alerts network FAIL'); alertsDone = true; finish(); };
+  ax.timeout = 10000;
+  ax.ontimeout = function () { console.log('[mta] alerts TIMEOUT'); alertsDone = true; finish(); };
   ax.send();
 
   // Fetch a feed; on a network error, retry once before giving up (a single

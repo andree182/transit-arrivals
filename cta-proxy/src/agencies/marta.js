@@ -97,10 +97,12 @@ export function transform(rows, station, now) {
 }
 
 export async function arrivals(env, station, now) {
+  const t = now ?? nowSecs();
+  if (!env.MARTA_KEY) return { epoch: t, model: [] };   // no key yet -> empty board, don't send apiKey=undefined
   const data = await fetchJSON(
     `https://developerservices.itsmarta.com:18096/itsmarta/railrealtimearrivals/developerservices/traindata?apiKey=${env.MARTA_KEY}`
   );
-  return transform(data, station, now ?? nowSecs());
+  return transform(data, station, t);
 }
 
 // Fetch + decode the GTFS-RT service-alerts feed and filter to the requested lines.

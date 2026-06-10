@@ -2,9 +2,13 @@ import { ctaToEpoch } from '../ctaTime.js';
 import { fetchJSON, nowSecs } from '../shared.js';
 
 // CTA route code (eta.rt) -> { label (2-char), color [r,g,b] }. Colors are the
-// GTFS route_color values.
+// GTFS route_color values, except where Pebble's 2-bit-per-channel quantization
+// (GColorFromRGB truncates each channel >> 6) would collide two lines.
 export const ROUTE_MAP = {
-  Red:  { label: 'Rd', color: [198, 12, 48] },
+  // Red nudged off its GTFS [198,12,48]: 198 truncates into the same bright-red
+  // bucket as Orange's 249 — near-identical bullets on watch. 170 lands in the
+  // dark-candy-apple bucket (#AA0000), closer to CTA's true #C60C30 anyway.
+  Red:  { label: 'Rd', color: [170, 12, 48] },
   Blue: { label: 'Bl', color: [0, 161, 222] },
   Brn:  { label: 'Br', color: [98, 54, 27] },
   G:    { label: 'Gr', color: [0, 155, 58] },

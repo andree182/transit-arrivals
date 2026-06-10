@@ -1,8 +1,17 @@
 name = "cta-proxy"
 main = "src/index.js"
-compatibility_date = "2025-06-01"
+compatibility_date = "2026-06-01"
 
-# CTA_KEY is set as a secret: `wrangler secret put CTA_KEY`
+# Secrets read by the worker (set each with `wrangler secret put NAME`):
+#   wrangler secret put CTA_KEY               # Chicago CTA Train Tracker
+#   wrangler secret put WMATA_KEY             # WMATA arrivals + incidents (empty board/alerts if unset)
+#   wrangler secret put MARTA_KEY             # MARTA rail realtime arrivals (empty board if unset; alerts feed is keyless)
+#   wrangler secret put BART_KEY              # BART (optional; falls back to the public demo key)
+#   wrangler secret put MBTA_KEY              # MBTA v3 API (optional; works keyless at lower rate limits)
+#   wrangler secret put MIAMI_KEY             # Swiftly Miami-Dade trip updates (empty board if unset)
+#   wrangler secret put HONOLULU_KEY          # Swiftly TheBus/Skyline trip updates (empty board if unset)
+#   wrangler secret put BALTIMORE_METRO_KEY   # Swiftly MDOT MTA Metro SubwayLink (mode degrades if unset)
+#   wrangler secret put BALTIMORE_LR_KEY      # Swiftly MDOT MTA Light RailLink (mode degrades if unset)
 
 [observability]
 enabled = true

@@ -39,11 +39,12 @@ test('nearestStation can return a standalone PATH station when closest', () => {
   assert.strictEqual(s.id, '26732');
 });
 
-test('nearestStation defaults to Times Sq when far outside the service area', () => {
-  const la = nearestStation(34.0522, -118.2437);   // Los Angeles
-  assert.strictEqual(la.name, 'Times Sq-42 St');
-  const london = nearestStation(51.5074, -0.1278); // London, too
-  assert.strictEqual(london.id, 'R16');
+test('nearestStation returns null far outside the service area (honest, no fake NYC board)', () => {
+  // A rider in LA or London must get the "no covered station" card, not a live
+  // Times Sq board with zero explanation.
+  assert.strictEqual(nearestStation(34.0522, -118.2437), null);   // Los Angeles
+  assert.strictEqual(nearestStation(51.5074, -0.1278), null);     // London
+  assert.strictEqual(nearestStation(39.7392, -104.9903), null);   // Denver
 });
 
 test('nearestStation still returns a real nearby station inside the area', () => {
@@ -154,8 +155,9 @@ test('not-yet-live agencies are hidden from the station DB', () => {
   assert.ok(!present.skyline, 'skyline should be hidden');
   // Live agencies stay searchable.
   assert.ok(present.gcrta && present.patco && present.trenurbano);
-  // A point in downtown Miami must not resolve to a (hidden) miami station.
-  assert.notStrictEqual(nearestStation(25.7759, -80.1961).agency, 'miami');
+  // A point in downtown Miami must not resolve to a (hidden) miami station —
+  // with miami hidden there is no covered station within range, so null.
+  assert.strictEqual(nearestStation(25.7759, -80.1961), null);
 });
 
 test('nearest station to a PATCO stop is a patco station', () => {

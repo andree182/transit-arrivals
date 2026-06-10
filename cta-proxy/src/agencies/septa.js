@@ -116,8 +116,8 @@ export function transformRT(trips, station, stopNames, now) {
   for (const trip of trips) {
     const rm = ROUTE_MAP[trip.routeId];
     if (!rm) continue;                                 // not a rail/trolley route (e.g. bus) -> drop
-    const hit = (trip.stops || []).find(s => want.has(s.stopId));
-    if (!hit || !hit.time) continue;                   // trip doesn't serve this station
+    const hit = (trip.stops || []).find(s => want.has(s.stopId) && s.time >= now);
+    if (!hit || !hit.time) continue;                   // trip doesn't serve this station, or already left
     const last = trip.stops[trip.stops.length - 1];
     const dest = (last && names[last.stopId]) || '';
     const dir = String(trip.directionId == null ? '' : trip.directionId);

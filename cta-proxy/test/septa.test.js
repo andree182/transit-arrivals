@@ -95,6 +95,24 @@ test('transformRT filters by rt stopids, labels by route, dest = terminal name',
   expect(model.find(l => l.line === undefined)).toBeUndefined();   // bus excluded
 });
 
+test('transformRT drops stops already passed (GTFS-RT keeps past stop_time_updates)', () => {
+  const trips = [
+    { routeId: 'M1', tripId: 'gone', directionId: 0, stops: [
+      { stopId: '1892', time: NOW - 60 },    // already departed the station
+      { stopId: '1935', time: NOW + 300 } ]  // still heading to terminal
+    },
+    { routeId: 'M1', tripId: 'coming', directionId: 0, stops: [
+      { stopId: '1892', time: NOW + 240 },
+      { stopId: '1935', time: NOW + 840 } ]
+    }
+  ];
+  const station = { rt: ['1892'] };
+  const model = transformRT(trips, station, { '1935': 'Norristown TC' }, NOW);
+  const m = model.find(l => l.line === 'M');
+  expect(m.directions.length).toBe(1);
+  expect(m.directions[0].times).toEqual([NOW + 240]);   // past arrival excluded
+});
+
 test('transformRT returns [] for empty inputs', () => {
   expect(transformRT([], { rt: ['1'] }, {}, NOW)).toEqual([]);
   expect(transformRT(null, { rt: [] }, {}, NOW)).toEqual([]);

@@ -11,10 +11,10 @@ typedef struct {
   uint8_t version;
   uint32_t epochBase;
   char station[40];
-  char id[12];
+  char id[24];     // v8: 23-byte wire field (4-mapid CTA complex) + NUL
   uint8_t nLines;
   LineView lines[MAX_LINES];
 } Bundle;
 
-// Returns true on a well-formed v3–v7 bundle.
+// Returns true on a well-formed v3–v8 bundle.
 bool bundle_decode(const uint8_t *p, size_t len, Bundle *out);

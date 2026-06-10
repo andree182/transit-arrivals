@@ -12,12 +12,15 @@ static uint16_t rd_u16(const uint8_t *p) { return (uint16_t)p[0] | ((uint16_t)p[
 static const char *const LEGACY_DIR_WORD[] = { "MANHATTAN", "BROOKLYN", "QUEENS", "BRONX", "" };
 
 bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
-  if (len < 56 || p[0] < 3 || p[0] > 7) return false;
+  if (len < 56 || p[0] < 3 || p[0] > 8) return false;
   size_t i = 0;
   out->version = p[i++];
+  // v8 widened the id field 11 -> 23 bytes (4-mapid CTA complex ids).
+  size_t idw = out->version >= 8 ? 23 : 11;
+  if (i + 4 + 39 + idw + 1 > len) return false;
   out->epochBase = rd_u32(p + i); i += 4;
   memcpy(out->station, p + i, 39); out->station[39] = 0; i += 39;
-  memcpy(out->id, p + i, 11); out->id[11] = 0; i += 11;
+  memcpy(out->id, p + i, idw); out->id[idw] = 0; i += idw;
   out->nLines = p[i++];
   if (out->nLines > MAX_LINES) out->nLines = MAX_LINES;
   for (int l = 0; l < out->nLines; l++) {

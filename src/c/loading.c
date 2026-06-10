@@ -217,6 +217,11 @@ bool loading_step(void) {
     if (c->final) { flipslot_free(&c->slot); c->settled = true; continue; }
     if (c->has_target && s_elapsed >= c->land_at) begin_final(c);
     else                                          reseed(c);
+    // Low heap: the fold's scratch alloc failed (slot.ok false). Stop flipping
+    // this cell and let it draw static — otherwise it re-mallocs at ~30 fps
+    // forever and the riffle never terminates. begin_final/reseed already set
+    // c->cur to the value draw_static should show.
+    if (!c->slot.ok) { c->settled = true; continue; }
     any_unsettled = true;
   }
 

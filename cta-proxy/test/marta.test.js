@@ -1,7 +1,7 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { transform, transformAlerts, ROUTE_MAP } from '../src/agencies/marta.js';
+import { transform, transformAlerts, arrivals, ROUTE_MAP } from '../src/agencies/marta.js';
 import { extractAlerts } from '../src/gtfsrt.js';
 import rows from './fixtures/marta-arrivals.json';
 const NOW = 1719853200;
@@ -31,6 +31,13 @@ test('station match is case-insensitive', () => {
 });
 test('unknown station -> empty model', () => {
   expect(transform(rows, 'NOWHERE', NOW).model).toEqual([]);
+});
+
+test('arrivals without MARTA_KEY returns empty model and never fetches', async () => {
+  globalThis.fetch = vi.fn(async () => { throw new Error('no live call'); });
+  const out = await arrivals({}, 'FIVE POINTS STATION', NOW);   // env has no MARTA_KEY
+  expect(out).toEqual({ epoch: NOW, model: [] });
+  expect(globalThis.fetch).not.toHaveBeenCalled();              // no ?apiKey=undefined upstream
 });
 
 test('transformAlerts surfaces a requested line and excludes others', () => {

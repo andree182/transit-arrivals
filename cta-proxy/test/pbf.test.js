@@ -22,6 +22,24 @@ test('readFields parses a varint field and a length-delimited field', () => {
   expect(fields[1]).toMatchObject({ fieldNum: 2, wireType: 2, start: 4, end: 7 });
 });
 
+test('readFields skips a deprecated group (incl. nested) and still decodes later fields', () => {
+  // field 3 SGROUP (tag 0x1B), containing:
+  //   field 1 varint 7            -> 0x08 0x07
+  //   field 4 nested SGROUP       -> 0x23
+  //     field 1 varint 1          -> 0x08 0x01
+  //   field 4 EGROUP              -> 0x24
+  // field 3 EGROUP (tag 0x1C)
+  // field 5 varint 9              -> 0x28 0x09  (must survive the skip)
+  const buf = new Uint8Array([0x1b, 0x08, 0x07, 0x23, 0x08, 0x01, 0x24, 0x1c, 0x28, 0x09]);
+  const fields = readFields(buf, 0, buf.length);
+  expect(fields).toEqual([{ fieldNum: 5, wireType: 0, value: 9 }]);
+});
+
+test('readFields still throws on truly invalid wire types', () => {
+  const buf = new Uint8Array([0x0e]);              // field 1, wire type 6
+  expect(() => readFields(buf, 0, buf.length)).toThrow(/wire type/);
+});
+
 test('readVarint handles values > 2^32 (int64 timestamps)', () => {
   const n = 4294967297; // 2^32 + 1
   const bytes = [];

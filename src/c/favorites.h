@@ -2,7 +2,7 @@
 #include <pebble.h>
 
 #define FAV_MAX        10
-#define FAV_ID_LEN     16   // GTFS stop ids are short; matches Bundle.id headroom
+#define FAV_ID_LEN     24   // fits a 4-mapid CTA complex id ("40070,40560,40850"); matches Bundle.id
 #define FAV_NAME_LEN   48   // >= Bundle.station (25) with headroom
 #define FAV_LABEL_LEN  24   // free-text label ("Home"); cosmetic, watch-side only
 #define FAV_AGENCY_LEN 12   // agency id ("trenurbano" = 10); sent back so (agency,id) resolves uniquely

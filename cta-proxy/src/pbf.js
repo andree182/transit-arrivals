@@ -9,7 +9,31 @@ export function readVarint(buf, pos) {
   return result;
 }
 
+// Skip a deprecated group (wire type 3): consume nested fields until the matching
+// EGROUP (wire type 4) for groupField. Nested groups recurse.
+function skipGroup(buf, pos, end, groupField) {
+  while (true) {
+    if (pos.i >= end) throw new RangeError('group overrun at ' + pos.i);
+    const tag = readVarint(buf, pos);
+    const fieldNum = tag >>> 3, wireType = tag & 0x7;
+    if (wireType === 4) {
+      if (fieldNum === groupField) return;             // matching EGROUP ends the skip
+      throw new Error('mismatched group end for field ' + fieldNum);
+    }
+    if (wireType === 0) { readVarint(buf, pos); }
+    else if (wireType === 2) {
+      const len = readVarint(buf, pos);
+      if (pos.i + len > end) throw new RangeError('length-delimited overrun at ' + pos.i);
+      pos.i += len;
+    } else if (wireType === 5) { pos.i += 4; if (pos.i > end) throw new RangeError('fixed32 overrun'); }
+    else if (wireType === 1) { pos.i += 8; if (pos.i > end) throw new RangeError('fixed64 overrun'); }
+    else if (wireType === 3) { skipGroup(buf, pos, end, fieldNum); }
+    else { throw new Error('unsupported wire type ' + wireType); }
+  }
+}
+
 // Reads all fields in [start,end). Returns { fieldNum, wireType, value | start,end }.
+// Deprecated groups (wire types 3/4) are skipped, not surfaced.
 export function readFields(buf, start, end) {
   const pos = { i: start }, out = [];
   while (pos.i < end) {
@@ -24,6 +48,8 @@ export function readFields(buf, start, end) {
       pos.i += len;
     } else if (wireType === 5) { pos.i += 4; if (pos.i > end) throw new RangeError('fixed32 overrun'); }
     else if (wireType === 1) { pos.i += 8; if (pos.i > end) throw new RangeError('fixed64 overrun'); }
+    else if (wireType === 3) { skipGroup(buf, pos, end, fieldNum); }
+    else if (wireType === 4) { /* stray EGROUP: tag has no payload; consume and continue */ }
     else { throw new Error('unsupported wire type ' + wireType); }
   }
   return out;

@@ -116,4 +116,18 @@ function extractSuspensions(feed, lines, now) {
   });
 }
 
-module.exports = { extractAlerts: extractAlerts, extractSuspensions: extractSuspensions };
+// Trim a string to at most `max` UTF-8 BYTES without splitting a character.
+// The watch's alert buffer and the AppMessage inbox are sized in bytes, so a
+// character-count slice would overflow them on non-ASCII alert text.
+function clampBytes(s, max) {
+  var bytes = 0, i = 0;
+  for (; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    var w = c < 0x80 ? 1 : (c < 0x800 ? 2 : 3);
+    if (bytes + w > max) break;
+    bytes += w;
+  }
+  return i < s.length ? s.slice(0, i) : s;
+}
+
+module.exports = { extractAlerts: extractAlerts, extractSuspensions: extractSuspensions, clampBytes: clampBytes };

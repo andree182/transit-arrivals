@@ -11,6 +11,10 @@ function getJSON(url, cb) {
     } else cb(new Error('HTTP ' + xhr.status));
   };
   xhr.onerror = function () { cb(new Error('network')); };
+  // A stalled connection (accepted, never answered) fires neither onload nor
+  // onerror; without this the watch spinner runs until the C-side watchdog.
+  xhr.timeout = 15000;
+  xhr.ontimeout = function () { cb(new Error('timeout')); };
   xhr.send();
 }
 

@@ -1,8 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { extractAlerts, extractSuspensions } = require('./alerts');
+const { extractAlerts, extractSuspensions, clampBytes } = require('./alerts');
 
 const NOW = 1000000;
+
+test('clampBytes trims to a UTF-8 byte budget without splitting a character', () => {
+  assert.strictEqual(clampBytes('abc', 10), 'abc');                  // under budget: unchanged
+  const dashes = '—'.repeat(10);                                     // em-dash = 3 UTF-8 bytes
+  const out = clampBytes(dashes, 10);                                // 10-byte budget: 3 whole dashes
+  assert.strictEqual(out, '—'.repeat(3));
+  assert.strictEqual(Buffer.byteLength(out, 'utf8'), 9);
+  // ASCII + multibyte mix: never exceed the budget in BYTES (not chars).
+  const mixed = clampBytes('ab—cd—ef', 7);                           // a b — c d = 2+3+2 = 7
+  assert.ok(Buffer.byteLength(mixed, 'utf8') <= 7);
+  assert.strictEqual(mixed, 'ab—cd');
+});
 
 function feed(entities) { return { entity: entities }; }
 function alert(routes, text, period) {

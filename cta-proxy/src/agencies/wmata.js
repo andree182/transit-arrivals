@@ -84,13 +84,16 @@ export function transformAlerts(data, wantLabels) {
 }
 
 export async function arrivals(env, station, now) {
+  const t = now ?? nowSecs();
+  if (!env.WMATA_KEY) return { epoch: t, model: [] };   // no key yet -> empty board, don't send api_key=undefined
   const data = await fetchJSON(
     `https://api.wmata.com/StationPrediction.svc/json/GetPrediction/${encodeURIComponent(station)}?api_key=${env.WMATA_KEY}`
   );
-  return transform(data, now ?? nowSecs());
+  return transform(data, t);
 }
 
 export async function alerts(env, routes) {
+  if (!env.WMATA_KEY) return { alerts: [], suspensions: [] };
   const data = await fetchJSON(
     `https://api.wmata.com/Incidents.svc/json/Incidents?api_key=${env.WMATA_KEY}`
   );

@@ -2,7 +2,6 @@ import { cached, json, corsResponse, nowSecs } from './shared.js';
 import * as cta from './agencies/cta.js';
 import * as wmata from './agencies/wmata.js';
 import * as marta from './agencies/marta.js';
-import * as lametro from './agencies/lametro.js';
 import * as bart from './agencies/bart.js';
 import * as mbta from './agencies/mbta.js';
 import * as septa from './agencies/septa.js';
@@ -13,7 +12,7 @@ import * as skyline from './agencies/skyline.js';
 import * as patco from './agencies/patco.js';
 import * as trenurbano from './agencies/trenurbano.js';
 
-const AGENCIES = { cta, wmata, marta, lametro, bart, mbta, septa, gcrta, miami, baltimore, skyline, patco, trenurbano };
+const AGENCIES = { cta, wmata, marta, bart, mbta, septa, gcrta, miami, baltimore, skyline, patco, trenurbano };
 const ARR_TTL = 25, ALR_TTL = 60;
 
 export default {

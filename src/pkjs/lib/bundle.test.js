@@ -2,51 +2,65 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { encodeBundle } = require('./bundle');
 
-// v7 header: version(1) + epoch(4) + station(39) + id(11) + lineCount(1) = 56.
+// v8 header: version(1) + epoch(4) + station(39) + id(23) + lineCount(1) = 68.
+// (v8 widened id 11 -> 23 so a 4-mapid CTA complex like Jackson/Library,
+// "40070,40560,40850", fits without truncation.)
 // Per line: label(2) + rgb(3) + nDirs(1) + sched(1) = 7, then per dir: dest(20) +
 // dirLabel(10) + nArr(1) + deltas(2*nArr) + expMask(1).
 // So for the first line/first dir:
-const LINE_COUNT = 55;
-const DIR_LABEL  = 56 + 2 + 3 + 1 + 1 + 20;  // 83  (10-byte null-padded label string; +1 for v7 sched byte)
-const N_ARR      = DIR_LABEL + 10;             // 93
-const DELTA0     = N_ARR + 1;                  // 94
+const HEADER     = 68;
+const LINE_COUNT = HEADER - 1;                       // 67
+const DIR_LABEL  = HEADER + 2 + 3 + 1 + 1 + 20;      // 95  (10-byte null-padded label string; +1 for sched byte)
+const N_ARR      = DIR_LABEL + 10;                   // 105
+const DELTA0     = N_ARR + 1;                        // 106
 
 test('encodes header, station, id, and one line/dir/arrival', () => {
   const arr = [{ line: 'N', color: [252, 204, 10], directions: [{ label: 'QUEENS', dest: 'Astoria-Ditmars Blvd', times: [1060, 1300], exp: [false, false] }] }];
   const bytes = encodeBundle('R01', 'Astoria-Ditmars Blvd', arr, 1000);
-  assert.strictEqual(bytes[0], 7);                        // version
+  assert.strictEqual(bytes[0], 8);                        // version
   assert.strictEqual(bytes[1] | (bytes[2] << 8) | (bytes[3] << 16) | (bytes[4] * 16777216), 1000);
   assert.strictEqual(bytes[LINE_COUNT], 1);               // lineCount
   assert.strictEqual(bytes[DELTA0] | (bytes[DELTA0 + 1] << 8), 60);  // 1060-1000
 });
 
-test('version byte is 7', () => {
+test('version byte is 8', () => {
   const bytes = encodeBundle('x', 'y', [], 1000);
-  assert.strictEqual(bytes[0], 7);
+  assert.strictEqual(bytes[0], 8);
+});
+
+test('v8: a 23-byte composite CTA id round-trips without truncation', () => {
+  // Jackson/Library is "40070,40560,40850" (17 bytes); the v7 11-byte field
+  // truncated it and broke favorites + the worker's mapid validation.
+  const id = '40070,40560,40850';
+  const bytes = encodeBundle(id, 'Jackson/Library', [], 1000);
+  let out = '';
+  for (let i = 44; i < 44 + id.length; i++) out += String.fromCharCode(bytes[i]);  // id field at 5+39
+  assert.strictEqual(out, id);
+  for (let i = 44 + id.length; i < 44 + 23; i++) assert.strictEqual(bytes[i], 0, `pad byte ${i}`);
+  assert.strictEqual(bytes[LINE_COUNT], 0);   // lineCount lands right after the 23-byte field
 });
 
 test('rgb comes from ln.color, not a colorFn', () => {
   const arr = [{ line: 'Q', color: [252, 204, 10], directions: [{ label: 'MANHATTAN', dest: 'Coney Island', times: [1100], exp: [false] }] }];
   const bytes = encodeBundle('x', 'y', arr, 1000);
-  // RGB is at offset: header(56) + label(2) = 58
-  assert.strictEqual(bytes[58], 252);
-  assert.strictEqual(bytes[59], 204);
-  assert.strictEqual(bytes[60], 10);
+  // RGB is at offset: header(68) + label(2) = 70
+  assert.strictEqual(bytes[70], 252);
+  assert.strictEqual(bytes[71], 204);
+  assert.strictEqual(bytes[72], 10);
 });
 
 test('missing ln.color defaults to white [255,255,255]', () => {
   const arr = [{ line: 'Q', directions: [{ label: 'MANHATTAN', dest: 'Coney Island', times: [1100], exp: [false] }] }];
   const bytes = encodeBundle('x', 'y', arr, 1000);
-  assert.strictEqual(bytes[58], 255);
-  assert.strictEqual(bytes[59], 255);
-  assert.strictEqual(bytes[60], 255);
+  assert.strictEqual(bytes[70], 255);
+  assert.strictEqual(bytes[71], 255);
+  assert.strictEqual(bytes[72], 255);
 });
 
 test('encodes 10-byte dirLabel string into the direction header', () => {
   // "MANHATTAN" is 9 chars, so byte 9 should be 0 (null-padded)
   const arr = [{ line: 'Q', color: [0, 0, 0], directions: [{ label: 'MANHATTAN', dest: 'Coney Island', times: [1100], exp: [false] }] }];
   const bytes = encodeBundle('x', 'y', arr, 1000);
-  // dirLabel field starts at DIR_LABEL (82)
   const label = 'MANHATTAN';
   for (let i = 0; i < label.length; i++) {
     assert.strictEqual(bytes[DIR_LABEL + i], label.charCodeAt(i), `char ${i}`);
@@ -105,10 +119,10 @@ test('omitting the exp array yields an all-local (zero) mask', () => {
 test('encodes a synthetic suspended line as nDirs=0 + notice', () => {
   const arr = [{ line: 'J', color: [1, 2, 3], directions: [], notice: 'No J trains' }];
   const bytes = encodeBundle('x', 'y', arr, 1000);
-  const nDirsAt = 56 + 2 + 3;                 // header(56) + label(2) + rgb(3) = 61
+  const nDirsAt = HEADER + 2 + 3;             // header(68) + label(2) + rgb(3) = 73
   assert.strictEqual(bytes[nDirsAt], 0);      // nDirs == 0
-  assert.strictEqual(bytes[nDirsAt + 1], 0);  // v7: sched == 0 (no schedules for suspended line)
-  const nLenAt = nDirsAt + 2;                 // 63 (v7: nDirs + sched + notice-len)
+  assert.strictEqual(bytes[nDirsAt + 1], 0);  // sched == 0 (no schedules for suspended line)
+  const nLenAt = nDirsAt + 2;                 // nDirs + sched + notice-len
   assert.strictEqual(bytes[nLenAt], 'No J trains'.length);
   let s = '';
   for (let i = nLenAt + 1; i < nLenAt + 1 + 'No J trains'.length; i++) s += String.fromCharCode(bytes[i]);
@@ -155,15 +169,15 @@ test('encodeBundle carries notice for a directions:[] line (El/BSL path)', () =>
   const lines = [{ line: 'L', color: [0, 124, 196], directions: [],
                    notice: "No live arrivals - SEPTA doesn't publish them" }];
   const buf = encodeBundle('septa-8th-market', '8th & Market', lines, epoch);
-  // Decode just enough to find the line block: skip version(1)+epoch(4)+name(39)+id(11)+count(1)
-  let p = 1 + 4 + 39 + 11 + 1;
+  // Decode just enough to find the line block: skip version(1)+epoch(4)+name(39)+id(23)+count(1)
+  let p = 1 + 4 + 39 + 23 + 1;
   // line label (2) + color (3) + dirCount (1)
   const label = String.fromCharCode(buf[p], buf[p + 1]).replace(/\0/g, '');
   assert.strictEqual(label, 'L');
   p += 2 + 3;
   assert.strictEqual(buf[p], 0);            // directions length 0
   p += 1;
-  p += 1;                                   // v7: skip sched byte
+  p += 1;                                   // skip sched byte
   const n = buf[p]; p += 1;                 // notice length
   assert.ok(n > 0, 'notice length must be > 0');
   const bytes = Array.from(buf.slice(p, p + n));
@@ -179,9 +193,9 @@ test('notice/reason encodes as UTF-8 (non-ASCII alert text does not garble)', ()
   const reason = 'Delays — Café stop closed';
   const lines = [{ line: 'Rd', color: [1, 2, 3], directions: [], notice: reason }];
   const buf = encodeBundle('x', 'X', lines, epoch);
-  let p = 1 + 4 + 39 + 11 + 1 + 2 + 3;        // → dirCount
+  let p = 1 + 4 + 39 + 23 + 1 + 2 + 3;        // → dirCount
   assert.strictEqual(buf[p], 0); p += 1;       // directions length 0
-  p += 1;                                      // v7: skip sched byte
+  p += 1;                                      // skip sched byte
   const n = buf[p]; p += 1;                    // notice BYTE length
   const bytes = Buffer.from(Array.from(buf.slice(p, p + n)));
   assert.strictEqual(n, Buffer.byteLength(reason, 'utf8'), 'length prefix is the UTF-8 byte count');
@@ -189,20 +203,20 @@ test('notice/reason encodes as UTF-8 (non-ASCII alert text does not garble)', ()
   assert.ok(bytes.includes(0xE2) && bytes.includes(0x94), 'em-dash present as UTF-8 (E2 80 94), not truncated to 0x14');
 });
 
-test('v7: header version is 7 and each line carries a sched flag byte', () => {
+test('each line carries a sched flag byte (v7+)', () => {
   const buf = encodeBundle('s1', 'Station', [
     { line: 'PA', color: [1, 2, 3], sched: true,
       directions: [{ dest: 'Philadelphia', label: '', times: [100], exp: [false] }] }
   ], 0);
-  assert.strictEqual(buf[0], 7);            // version
-  // header = 56 bytes; line starts at 56: label(2)+rgb(3)=5 -> [61]=nDirs, [62]=sched
-  assert.strictEqual(buf[56 + 5], 1);       // nDirs == 1
-  assert.strictEqual(buf[56 + 6], 1);       // sched == 1
+  assert.strictEqual(buf[0], 8);            // version
+  // header = 68 bytes; line starts at 68: label(2)+rgb(3)=5 -> [73]=nDirs, [74]=sched
+  assert.strictEqual(buf[HEADER + 5], 1);   // nDirs == 1
+  assert.strictEqual(buf[HEADER + 6], 1);   // sched == 1
 });
 
-test('v7: sched defaults to 0 for normal lines', () => {
+test('sched defaults to 0 for normal lines', () => {
   const buf = encodeBundle('s1', 'Station', [
     { line: '1', color: [1, 2, 3], directions: [{ dest: 'X', label: '', times: [100], exp: [false] }] }
   ], 0);
-  assert.strictEqual(buf[56 + 6], 0);       // sched == 0
+  assert.strictEqual(buf[HEADER + 6], 0);   // sched == 0
 });

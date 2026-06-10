@@ -9,12 +9,24 @@
 #include "loading.h"
 #include "arrival.h"
 
-#define PERSIST_BUNDLE 1
+#define PERSIST_BUNDLE 1        // LEGACY single-key bundle cache; deleted on load (see bundle chunks)
 #define PERSIST_SEL    5
 #define PERSIST_NEAREST_POS 6
 #define PERSIST_SEEN_HELP   7
 #define PERSIST_VIEW        8   // packed (s_line << 8 | s_dir): last line+direction shown
-#define PERSIST_VIEWMEM     9   // per-station last line+direction table (see ViewMem)
+#define PERSIST_VIEWMEM     9   // LEGACY pre-v8 ViewMem table (12-byte ids); deleted on load
+// (keys 10..19 belong to favorites.c: PERSIST_FAV_BASE + i)
+#define PERSIST_VIEWMEM2    20  // per-station last line+direction table (see ViewMem)
+// Cached-bundle storage. persist_write_data silently caps a key at
+// PERSIST_DATA_MAX_LENGTH (256 B) and a real multi-line bundle is up to ~828 B,
+// so the cache is split across fixed 256-byte chunk keys with the total length
+// under its own key. (The old single-key cache at PERSIST_BUNDLE never actually
+// persisted anything beyond two lines.)
+#define PERSIST_BUNDLE_LEN    25
+#define PERSIST_BUNDLE_CHUNK0 26   // ..29: four chunks of up to 256 B = 1024 B
+#define BUNDLE_CHUNK_SZ  256
+#define BUNDLE_CHUNKS    4
+#define BUNDLE_CACHE_MAX (BUNDLE_CHUNK_SZ * BUNDLE_CHUNKS)
 
 #define STALE_SECS 120   // data older than this is no longer trustworthy as "live"
 #define CONNECT_TIMEOUT_MS 20000  // no bundle/error in this window -> "Can't reach phone"
@@ -79,6 +91,7 @@ static void open_manage(void);
 static void open_alerts(void);
 static void push_favsync(void);
 static void connect_timeout_cb(void *ctx);
+static void save_cached_bundle(const uint8_t *data, size_t len);
 #ifdef MTA_DEBUG_STUB
 static void stub_arrive(void *ctx);
 #endif
@@ -213,9 +226,11 @@ static void tx_pump(void) {
     return;
   }
   if (s_tx_favsync) {
-    // static (not stack): ~882 B is a lot for aplite-class stacks, and the
-    // single-threaded event loop means this is never reentered.
-    static uint8_t buf[2 + FAV_MAX * (3 + (FAV_ID_LEN - 1) + (FAV_NAME_LEN - 1) + (FAV_LABEL_LEN - 1))];
+    // static (not stack): ~1.1 KB is a lot for a Pebble app stack, and the
+    // single-threaded event loop means this is never reentered. Sized for the
+    // favsync_encode worst case: header(2) + per favorite four length-prefixed
+    // fields (id, name, label, agency) — a length byte plus max payload each.
+    static uint8_t buf[2 + FAV_MAX * (4 + (FAV_ID_LEN - 1) + (FAV_NAME_LEN - 1) + (FAV_LABEL_LEN - 1) + (FAV_AGENCY_LEN - 1))];
     size_t n = favsync_encode(s_nearest_pos, buf, sizeof(buf));
     if (!n) { s_tx_favsync = false; return; }
     if (app_message_outbox_begin(&out) != APP_MSG_OK) return;
@@ -668,15 +683,19 @@ static void ring_prev(ClickRecognizerRef r, void *c) {
 // it survives app restarts. Covers favorites and the (GPS-varying) Nearest station
 // uniformly, since both resolve to a real station id.
 #define VIEWMEM_MAX 16
-typedef struct { char id[12]; uint8_t line; uint8_t dir; } ViewMem;
+typedef struct { char id[24]; uint8_t line; uint8_t dir; } ViewMem;  // id matches Bundle.id (v8)
 static ViewMem s_viewmem[VIEWMEM_MAX];
 static uint8_t s_viewmem_n;
 
 static void viewmem_load(void) {
   s_viewmem_n = 0;
-  if (!persist_exists(PERSIST_VIEWMEM)) return;
-  int sz = persist_read_data(PERSIST_VIEWMEM, s_viewmem, sizeof(s_viewmem));
-  if (sz <= 0) return;
+  // The pre-v8 table (12-byte ids) lived under PERSIST_VIEWMEM with a different
+  // entry size; reading it as the new struct would garble. Drop it and start
+  // fresh under PERSIST_VIEWMEM2 — view memory is a cosmetic cache.
+  if (persist_exists(PERSIST_VIEWMEM)) persist_delete(PERSIST_VIEWMEM);
+  if (!persist_exists(PERSIST_VIEWMEM2)) return;
+  int sz = persist_read_data(PERSIST_VIEWMEM2, s_viewmem, sizeof(s_viewmem));
+  if (sz <= 0 || sz % (int)sizeof(ViewMem) != 0) return;   // partial/foreign blob: ignore
   int n = sz / (int)sizeof(ViewMem);
   if (n > VIEWMEM_MAX) n = VIEWMEM_MAX;
   s_viewmem_n = (uint8_t)n;
@@ -708,7 +727,7 @@ static void viewmem_put(const char *id, uint8_t line, uint8_t dir) {
   strncpy(s_viewmem[0].id, id, sizeof(s_viewmem[0].id) - 1);
   s_viewmem[0].id[sizeof(s_viewmem[0].id) - 1] = 0;
   s_viewmem[0].line = line; s_viewmem[0].dir = dir;
-  persist_write_data(PERSIST_VIEWMEM, s_viewmem, (size_t)s_viewmem_n * sizeof(ViewMem));
+  persist_write_data(PERSIST_VIEWMEM2, s_viewmem, (size_t)s_viewmem_n * sizeof(ViewMem));
 }
 
 static void persist_view(void) {
@@ -954,7 +973,7 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
   Tuple *reqt = dict_find(iter, MESSAGE_KEY_Req);
   if (reqt && (uint32_t)atoi(reqt->value->cstring) != s_req_token) return;
   if (bun) {
-    char prev_id[12];
+    char prev_id[24];
     prev_id[0] = '\0';
     if (s_have_bundle) { strncpy(prev_id, s_bundle.id, sizeof(prev_id) - 1); prev_id[sizeof(prev_id) - 1] = '\0'; }
     if (bundle_decode(bun->value->data, bun->length, &s_bundle)) {
@@ -968,7 +987,7 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
         if (s_line < MAX_LINES) s_line_dir[s_line] = s_dir;  // seed the restored line's direction
       } else clamp_view();                                // same station refresh: keep the user's view
       s_switching = false;
-      persist_write_data(PERSIST_BUNDLE, bun->value->data, bun->length);
+      save_cached_bundle(bun->value->data, bun->length);
       persist_view();
       int fi = favorites_index_of(s_bundle.id);
       if (fi >= 0) favorites_update_name((uint8_t)fi, s_bundle.station);
@@ -990,15 +1009,45 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
 
 #ifndef MTA_DEBUG_STUB
 static void load_cached_bundle(void) {
-  if (!persist_exists(PERSIST_BUNDLE)) return;
-  int sz = persist_get_size(PERSIST_BUNDLE);
-  uint8_t *buf = malloc(sz);
+  // One-time cleanup of the legacy single-key cache (it could never hold a
+  // multi-line bundle; see PERSIST_BUNDLE_LEN).
+  if (persist_exists(PERSIST_BUNDLE)) persist_delete(PERSIST_BUNDLE);
+  if (!persist_exists(PERSIST_BUNDLE_LEN)) return;
+  int len = persist_read_int(PERSIST_BUNDLE_LEN);
+  if (len <= 0 || len > BUNDLE_CACHE_MAX) return;
+  uint8_t *buf = malloc((size_t)len);
   if (!buf) return;
-  persist_read_data(PERSIST_BUNDLE, buf, sz);
-  if (bundle_decode(buf, sz, &s_bundle)) s_have_bundle = true;
+  int got = 0;
+  for (int c = 0; c < BUNDLE_CHUNKS && got < len; c++) {
+    int want = len - got;
+    if (want > BUNDLE_CHUNK_SZ) want = BUNDLE_CHUNK_SZ;
+    if (persist_read_data(PERSIST_BUNDLE_CHUNK0 + c, buf + got, (size_t)want) != want) break;
+    got += want;
+  }
+  if (got == len && bundle_decode(buf, (size_t)len, &s_bundle)) s_have_bundle = true;
   free(buf);
 }
 #endif
+
+// Persist the raw wire bundle across fixed 256-byte chunk keys (the per-key
+// persist cap). The length key is written LAST so a power loss mid-write leaves
+// a stale-but-consistent cache (old length + mixed chunks fails bundle_decode's
+// bounds checks at worst, never over-reads).
+static void save_cached_bundle(const uint8_t *data, size_t len) {
+  if (len == 0 || len > BUNDLE_CACHE_MAX) { persist_delete(PERSIST_BUNDLE_LEN); return; }
+  size_t off = 0;
+  for (int c = 0; c < BUNDLE_CHUNKS; c++) {
+    if (off < len) {
+      size_t n = len - off;
+      if (n > BUNDLE_CHUNK_SZ) n = BUNDLE_CHUNK_SZ;
+      persist_write_data(PERSIST_BUNDLE_CHUNK0 + c, data + off, n);
+      off += n;
+    } else if (persist_exists(PERSIST_BUNDLE_CHUNK0 + c)) {
+      persist_delete(PERSIST_BUNDLE_CHUNK0 + c);   // shrink: drop stale tail chunks
+    }
+  }
+  persist_write_int(PERSIST_BUNDLE_LEN, (int)len);
+}
 
 #ifdef MTA_DEBUG_STUB
 // Synthetic bundle so the hero renders in the emulator, which has no live MTA
@@ -1074,8 +1123,8 @@ static void canvas_update(Layer *layer, GContext *ctx) {
         switch (s_error) {
           // "No location" is a GPS failure with no station context, so no footer.
           case 1: states_draw_message(ctx, b, "No location", "Check Location Services, or pick a station", NULL); break;
-          case 2: states_draw_message(ctx, b, "No station", "Couldn't find a station here", NULL); break;
-          case 4: states_draw_message(ctx, b, "No trains", "Nothing scheduled right now", foot); break;
+          case 2: states_draw_message(ctx, b, "No station", "No covered station nearby. Pick a city in the phone app.", NULL); break;
+          case 4: states_draw_message(ctx, b, "No trains", "No upcoming arrivals right now", foot); break;
           case 5: states_draw_message(ctx, b, "No phone", "Check Bluetooth, then press to retry", foot); break;
           default: states_draw_message(ctx, b, "No data", "Couldn't load trains - press to retry", foot); break;  // offline, no cache
         }
@@ -1117,9 +1166,13 @@ static void canvas_update(Layer *layer, GContext *ctx) {
     static char pos[12];
     snprintf(pos, sizeof(pos), "%d/%d", (int)s_sel + 1, (int)ring_len());
     graphics_context_set_text_color(ctx, GColorLightGray);
-    int pos_inset = PBL_IF_ROUND_ELSE(40, 4);
+    // Round: at y=2 the bezel arc clips x<~70, so tuck the indicator down to
+    // y=20 / x=36 — inside the circle, mirroring the alert badge's top-right
+    // inset. Rect keeps the tight top-left corner.
+    int pos_inset = PBL_IF_ROUND_ELSE(36, 4);
+    int pos_top = PBL_IF_ROUND_ELSE(20, 2);
     graphics_draw_text(ctx, pos, fonts_get_system_font(FONT_KEY_GOTHIC_14),
-      GRect(pos_inset, 2, 40, 16), GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+      GRect(pos_inset, pos_top, 40, 16), GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   }
 
   // Service-alert badge: a warning triangle top-right when the current station
@@ -1360,9 +1413,9 @@ static void init(void) {
   app_message_register_outbox_sent(outbox_sent);
   app_message_register_outbox_failed(outbox_failed);
   // Right-size the AppMessage buffers instead of asking for the 8200-byte maximum
-  // each (~16 KB of heap). The largest inbound payload is a Bundle (<=808 B),
-  // an Alerts string (<=700 B), or a FavSet blob (<=882 B); the largest outbound
-  // is a FavSync blob (<=882 B). Reserving the full maximum starved the flip
+  // each (~16 KB of heap). The largest inbound payload is a Bundle (<=828 B, v8),
+  // an Alerts string (<=700 B), or a FavSet blob (<=1082 B); the largest outbound
+  // is a FavSync blob (<=1082 B). Reserving the full maximum starved the flip
   // animation on emery (200x228 → large per-glyph cell buffers), exhausting the
   // 78 KB app heap and faulting on big complex stations. 2 KB / 1.25 KB leaves
   // generous framing headroom while freeing ~13 KB.
@@ -1381,6 +1434,7 @@ static void deinit(void) {
   publish_glance();
   tick_timer_service_unsubscribe();
   if (s_poll) app_timer_cancel(s_poll);
+  if (s_launch_settle) { app_timer_cancel(s_launch_settle); s_launch_settle = NULL; }
   connect_wd_cancel();
   window_destroy(s_window);
   window_destroy(s_settings);

@@ -44,9 +44,19 @@ test('clamps over-long fields to the C buffer sizes', () => {
   const longName = 'N'.repeat(80);
   const longLabel = 'L'.repeat(40);
   const out = decodeFavList(encodeFavList(0, [{ id: longId, name: longName, label: longLabel }]));
-  assert.strictEqual(out.favs[0].id.length, 15);
+  assert.strictEqual(out.favs[0].id.length, 23);
   assert.strictEqual(out.favs[0].name.length, 47);
   assert.strictEqual(out.favs[0].label.length, 23);
+});
+
+test('a composite CTA id (4 mapids worst case = 23 bytes) round-trips intact', () => {
+  // Jackson/Library is "40070,40560,40850" (17 bytes); the old 15-byte cap
+  // truncated it to "40070,40560,408", breaking the favorite forever.
+  const favs = [{ id: '40070,40560,40850', name: 'Jackson/Library', label: '', agency: 'cta' }];
+  assert.strictEqual(decodeFavList(encodeFavList(0, favs)).favs[0].id, '40070,40560,40850');
+  const worst = '40000,40001,40002,40003';   // 23 bytes: the regex-allowed maximum
+  const out = decodeFavList(encodeFavList(0, [{ id: worst, name: 'X', label: '', agency: 'cta' }]));
+  assert.strictEqual(out.favs[0].id, worst);
 });
 
 test('never splits a multibyte character at the field-length cap', () => {

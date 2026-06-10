@@ -3,6 +3,7 @@ var bundleLib = require('./lib/bundle');
 var favsync = require('./lib/favsync');
 var config = require('./lib/config');
 var agencies = require('./lib/agencies');
+var alertsLib = require('./lib/alerts');
 
 function loadMirror() {
   try { return JSON.parse(localStorage.getItem('mta_favs')) || { nearestPos: 0, favs: [] }; }
@@ -42,7 +43,8 @@ function refreshFor(station, token) {
       // The watch stores alerts in a 700-byte buffer and the AppMessage inbox
       // is right-sized (2 KB), so cap the string here — an over-long alert
       // would otherwise be dropped by the inbox instead of arriving truncated.
-      var alertsMsg = { Alerts: (res.alerts || []).join('\n').slice(0, 690) };
+      // Clamped in UTF-8 BYTES (the watch buffer's unit), not JS characters.
+      var alertsMsg = { Alerts: alertsLib.clampBytes((res.alerts || []).join('\n'), 690) };
       if (token != null) alertsMsg.Req = token;
       Pebble.sendAppMessage(alertsMsg);
     });
