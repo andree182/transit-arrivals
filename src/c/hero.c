@@ -407,7 +407,7 @@ int hero_glyphs(GRect bounds, const Bundle *b, uint8_t line, uint8_t dir,
 
   // --- headsign (row 1) -------------------------------------------------------
   GFont hdr = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
-  int hdr_top = dir_top + (dlabel ? 14 : 2);
+  int hdr_top = dir_top + ((dlabel || L->sched) ? 14 : 2);   // match hero_draw: SCHED badge reserves the top slot
   int hdr_h = PBL_IF_ROUND_ELSE(38, 22);
   n = emit_chars(out, n, max, D->dest, hdr, GColorWhite, GColorBlack,
                  GRect(hdr_inset, hdr_top, bounds.size.w - 2 * hdr_inset, hdr_h),
