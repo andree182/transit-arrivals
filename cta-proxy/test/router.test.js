@@ -86,3 +86,10 @@ test('skyline is a registered agency (unknown station -> empty model)', async ()
   expect(body.error).toBeUndefined();
   expect(body.model).toEqual([]);
 });
+test('patco is a registered agency (unknown station -> empty model)', async () => {
+  const r = await call('/patco/arrivals?station=__none__');
+  const body = await r.json();
+  expect(r.status).toBe(200);
+  expect(body.error).toBeUndefined();
+  expect(body.model).toEqual([]);
+});

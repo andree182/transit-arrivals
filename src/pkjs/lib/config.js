@@ -45,7 +45,7 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 'function disp(s){return s.name+(s.lines&&s.lines.length?" ("+s.lines.join("")+")":"");}' +
 // One distinct, city-iconic color per agency (used for the row badge AND the
 // filter chip). Kept visually separable so every city reads uniquely.
-'var AGENCY_META={mta:{city:"NYC",c:"#0039A6"},cta:{city:"CHI",c:"#2A8FD4"},wmata:{city:"DC",c:"#C8102E"},marta:{city:"ATL",c:"#F2A900"},lametro:{city:"LA",c:"#0098A9"},bart:{city:"SF",c:"#ED7B26"},mbta:{city:"BOS",c:"#00843D"},septa:{city:"PHL",c:"#7C3AED"},gcrta:{city:"CLE",c:"#008C95"},miami:{city:"MIA",c:"#EC008C"},baltimore:{city:"BAL",c:"#8DC63F"},skyline:{city:"HNL",c:"#FF6F61"}};' +
+'var AGENCY_META={mta:{city:"NYC",c:"#0039A6"},cta:{city:"CHI",c:"#2A8FD4"},wmata:{city:"DC",c:"#C8102E"},marta:{city:"ATL",c:"#F2A900"},lametro:{city:"LA",c:"#0098A9"},bart:{city:"SF",c:"#ED7B26"},mbta:{city:"BOS",c:"#00843D"},septa:{city:"PHL",c:"#7C3AED"},gcrta:{city:"CLE",c:"#008C95"},miami:{city:"MIA",c:"#EC008C"},baltimore:{city:"BAL",c:"#8DC63F"},skyline:{city:"HNL",c:"#FF6F61"},patco:{city:"PAT",c:"#BC0035"}};' +
 'function meta(s){return AGENCY_META[s&&s.agency]||{city:"",c:"#666"};}' +
 'function colorForCity(city){for(var k in AGENCY_META)if(AGENCY_META[k].city===city)return AGENCY_META[k].c;return "#0a84ff";}' +
 // Dark vs light text by perceived luminance, so gold/sky chips stay legible.

@@ -159,3 +159,9 @@ test('nearest station near East Kapolei is a Skyline station', () => {
   const s = nearestStation(21.345574, -158.050995);
   assert.strictEqual(s.agency, 'skyline');
 });
+
+test('nearest station to a PATCO stop is a patco station', () => {
+  // Collingswood PATCO: 39.91359, -75.06456
+  const s = nearestStation(39.91359, -75.06456);
+  assert.strictEqual(s.agency, 'patco');
+});
