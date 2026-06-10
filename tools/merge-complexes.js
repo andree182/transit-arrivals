@@ -59,7 +59,13 @@ Object.keys(groups).forEach(function (root) {
     return (lineRank(a) - lineRank(b)) || (a < b ? -1 : 1);
   });
   var ids = members.map(function (m) { return m.id; }).sort();
-  out.push({ id: rep.id, name: rep.name, lat: rep.lat, lon: rep.lon, lines: mergedLines, ids: ids });
+  // Pin at the CENTROID, not the representative's coord — a spread-out complex
+  // (14 St/6 Av: 1/2/3 at 7 Av, F/M/L at 6 Av) must stay nearest from any entrance.
+  // (PATH members are layered on later by attach-path.js, then re-centred by
+  // center-complexes.js, which is the authoritative final pass.)
+  var clat = members.reduce(function (a, m) { return a + m.lat; }, 0) / members.length;
+  var clon = members.reduce(function (a, m) { return a + m.lon; }, 0) / members.length;
+  out.push({ id: rep.id, name: rep.name, lat: +clat.toFixed(6), lon: +clon.toFixed(6), lines: mergedLines, ids: ids });
 });
 
 // Keep output stable: sort by id.
