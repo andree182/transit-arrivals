@@ -12,7 +12,7 @@ static uint16_t rd_u16(const uint8_t *p) { return (uint16_t)p[0] | ((uint16_t)p[
 static const char *const LEGACY_DIR_WORD[] = { "MANHATTAN", "BROOKLYN", "QUEENS", "BRONX", "" };
 
 bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
-  if (len < 56 || p[0] < 3 || p[0] > 6) return false;
+  if (len < 56 || p[0] < 3 || p[0] > 7) return false;
   size_t i = 0;
   out->version = p[i++];
   out->epochBase = rd_u32(p + i); i += 4;
@@ -26,6 +26,8 @@ bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
     memcpy(L->label, p + i, 2); L->label[2] = 0; i += 2;
     L->r = p[i++]; L->g = p[i++]; L->b = p[i++];
     L->nDirs = p[i++];
+    L->sched = 0;
+    if (out->version >= 7) { if (i + 1 > len) return false; L->sched = p[i++]; }
     L->notice[0] = 0;
     if (out->version >= 4 && L->nDirs == 0) {
       if (i + 1 > len) return false;

@@ -34,7 +34,7 @@ function putU32(arr, v) { arr.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, 
 
 function encodeBundle(stationId, stationName, lines, epochBase) {
   var b = [];
-  b.push(6);                       // version
+  b.push(7);                       // version
   putU32(b, epochBase);
   putStr(b, stationName, 39);
   putStr(b, stationId, 11);
@@ -44,6 +44,7 @@ function encodeBundle(stationId, stationName, lines, epochBase) {
     var c = ln.color || [255, 255, 255]; b.push(c[0] & 0xff, c[1] & 0xff, c[2] & 0xff);
     var dirs = ln.directions || [];
     b.push(dirs.length & 0xff);
+    b.push(ln.sched ? 1 : 0);          // v7: per-line scheduled-times flag
     if (dirs.length === 0) {
       // Variable-length, byte-length-prefixed UTF-8 (max 80 bytes -> watch's
       // 81-byte buffer). UTF-8 (not Latin-1) so non-ASCII alert/notice text
