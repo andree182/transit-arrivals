@@ -1033,6 +1033,15 @@ static void stub_arrive(void *ctx) {
 }
 #endif
 
+// Name of the station the ring is currently on — the selected favorite, or the
+// last-loaded station for the Nearest slot. Used so error/loading cards keep a
+// station-name footer instead of floating context-free.
+static const char *current_station_name(void) {
+  if (ring_is_nearest(s_sel)) return s_have_bundle ? s_bundle.station : "Nearest";
+  const Fav *f = favorites_get(ring_fav_index(s_sel));
+  return (f && f->name[0]) ? f->name : (s_have_bundle ? s_bundle.station : "");
+}
+
 static void canvas_update(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   graphics_context_set_fill_color(ctx, GColorBlack);
@@ -1044,12 +1053,16 @@ static void canvas_update(Layer *layer, GContext *ctx) {
 
   switch (current_screen()) {
     case SCR_ERROR:
-      switch (s_error) {
-        case 1: states_draw_message(ctx, b, "No location", "Check Location Services, or pick a station"); break;
-        case 2: states_draw_message(ctx, b, "No station", "Couldn't find a station here"); break;
-        case 4: states_draw_message(ctx, b, "No trains", "Nothing scheduled right now"); break;
-        case 5: states_draw_message(ctx, b, "No phone", "Check Bluetooth, then press to retry"); break;
-        default: states_draw_message(ctx, b, "No data", "Couldn't load trains - press to retry"); break;  // offline, no cache
+      {
+        const char *foot = current_station_name();
+        switch (s_error) {
+          // "No location" is a GPS failure with no station context, so no footer.
+          case 1: states_draw_message(ctx, b, "No location", "Check Location Services, or pick a station", NULL); break;
+          case 2: states_draw_message(ctx, b, "No station", "Couldn't find a station here", NULL); break;
+          case 4: states_draw_message(ctx, b, "No trains", "Nothing scheduled right now", foot); break;
+          case 5: states_draw_message(ctx, b, "No phone", "Check Bluetooth, then press to retry", foot); break;
+          default: states_draw_message(ctx, b, "No data", "Couldn't load trains - press to retry", foot); break;  // offline, no cache
+        }
       }
       return;
 
@@ -1063,7 +1076,8 @@ static void canvas_update(Layer *layer, GContext *ctx) {
       loading_render(ctx, b, time(NULL));
 #else  // no Solari interstitial on b/w: a plain status message
       states_draw_message(ctx, b, ring_is_nearest(s_sel) ? "Locating" : "Loading",
-                          s_have_bundle ? "Updating arrivals" : "Getting trains");
+                          s_have_bundle ? "Updating arrivals" : "Getting trains",
+                          ring_is_nearest(s_sel) ? NULL : current_station_name());
 #endif
       return;
 

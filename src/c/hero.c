@@ -210,11 +210,15 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   int mins = secs / 60;
   fmt_count(mins, num, sizeof(num));
   bool isNow = (mins <= 0);
-  bool isDouble = (!isNow && mins >= 10);
-  float leftX = isNow ? 75.8f : (isDouble ? 68.8f : 76.6f);
-  float baseY = isNow ? 91.5f : (isDouble ? 95.1f : 96.8f);
-  GFont nf = isNow ? fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD)
-                   : fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
+  bool isTriple = (!isNow && mins >= 100);                 // scheduled agencies overnight: 3-digit minutes
+  bool isDouble = (!isNow && mins >= 10 && !isTriple);
+  // A 3-digit count in BITHAM_42 is too wide — the number runs to the edge and
+  // shoves "min" off-screen. Drop to GOTHIC_28_BOLD so three digits occupy about
+  // the width of two BITHAM digits; "min" auto-follows ns.w so it stays on screen.
+  float leftX = isNow ? 75.8f : (isTriple ? 66.0f : (isDouble ? 68.8f : 76.6f));
+  float baseY = isNow ? 91.5f : (isTriple ? 91.5f : (isDouble ? 95.1f : 96.8f));
+  GFont nf = (isNow || isTriple) ? fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD)
+                                 : fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
   GSize ns = graphics_text_layout_get_content_size(num, nf,
                GRect(0, 0, bounds.size.w, bounds.size.h), GTextOverflowModeFill, GTextAlignmentLeft);
   int nx = (int)(leftX * SX);
@@ -424,11 +428,15 @@ int hero_glyphs(GRect bounds, const Bundle *b, uint8_t line, uint8_t dir,
   int mins = secs / 60;
   fmt_count(mins, num, sizeof(num));
   bool isNow = (mins <= 0);
-  bool isDouble = (!isNow && mins >= 10);
-  float leftX = isNow ? 75.8f : (isDouble ? 68.8f : 76.6f);
-  float baseY = isNow ? 91.5f : (isDouble ? 95.1f : 96.8f);
-  GFont nf = isNow ? fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD)
-                   : fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
+  bool isTriple = (!isNow && mins >= 100);                 // scheduled agencies overnight: 3-digit minutes
+  bool isDouble = (!isNow && mins >= 10 && !isTriple);
+  // A 3-digit count in BITHAM_42 is too wide — the number runs to the edge and
+  // shoves "min" off-screen. Drop to GOTHIC_28_BOLD so three digits occupy about
+  // the width of two BITHAM digits; "min" auto-follows ns.w so it stays on screen.
+  float leftX = isNow ? 75.8f : (isTriple ? 66.0f : (isDouble ? 68.8f : 76.6f));
+  float baseY = isNow ? 91.5f : (isTriple ? 91.5f : (isDouble ? 95.1f : 96.8f));
+  GFont nf = (isNow || isTriple) ? fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD)
+                                 : fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
   GSize ns = graphics_text_layout_get_content_size(num, nf,
                GRect(0, 0, bounds.size.w, bounds.size.h), GTextOverflowModeFill, GTextAlignmentLeft);
   int nx = (int)(leftX * SX);
