@@ -1,0 +1,27 @@
+# Pebble SDK build output
+build/
+.lock-waf*
+*.pbw
+
+# Dependencies
+node_modules/
+
+# Cloudflare Worker local state
+cta-proxy/.wrangler/
+.dev.vars
+
+# Emulator / ad-hoc captures (curated shots live in screenshots/)
+pebble_screenshot_*.png
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Local agent/tooling state
+.claude/
+.superpowers/
