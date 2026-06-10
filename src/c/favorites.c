@@ -14,8 +14,9 @@ static uint8_t s_count = 0;
 //   [1..L]   id bytes
 //   [L+1..]  name, NUL-terminated
 //   [..]     label, NUL-terminated  (absent in pre-Spec-B blobs => "")
+//   [..]     agency, NUL-terminated (absent in pre-agency blobs => "")
 static void write_entry(uint8_t i) {
-  uint8_t buf[1 + FAV_ID_LEN + FAV_NAME_LEN + FAV_LABEL_LEN];
+  uint8_t buf[1 + FAV_ID_LEN + FAV_NAME_LEN + FAV_LABEL_LEN + FAV_AGENCY_LEN];
   uint8_t L = (uint8_t)strlen(s_favs[i].id);
   if (L >= FAV_ID_LEN) L = FAV_ID_LEN - 1;
   buf[0] = L;
@@ -29,12 +30,17 @@ static void write_entry(uint8_t i) {
   size_t off = 1 + L + nlen + 1;
   memcpy(buf + off, s_favs[i].label, llen);
   buf[off + llen] = '\0';
-  persist_write_data(PERSIST_FAV_BASE + i, buf, off + llen + 1);
+  size_t alen = strlen(s_favs[i].agency);
+  if (alen >= FAV_AGENCY_LEN) alen = FAV_AGENCY_LEN - 1;
+  size_t aoff = off + llen + 1;
+  memcpy(buf + aoff, s_favs[i].agency, alen);
+  buf[aoff + alen] = '\0';
+  persist_write_data(PERSIST_FAV_BASE + i, buf, aoff + alen + 1);
 }
 
 static bool read_entry(uint8_t i, Fav *out) {
   if (!persist_exists(PERSIST_FAV_BASE + i)) return false;
-  uint8_t buf[1 + FAV_ID_LEN + FAV_NAME_LEN + FAV_LABEL_LEN];
+  uint8_t buf[1 + FAV_ID_LEN + FAV_NAME_LEN + FAV_LABEL_LEN + FAV_AGENCY_LEN];
   int n = persist_read_data(PERSIST_FAV_BASE + i, buf, sizeof(buf));
   if (n < 2) return false;
   uint8_t L = buf[0];
@@ -50,6 +56,7 @@ static bool read_entry(uint8_t i, Fav *out) {
   out->name[nlen] = '\0';
   // label: bytes after the name's NUL, if any (empty for pre-Spec-B blobs).
   out->label[0] = '\0';
+  out->agency[0] = '\0';
   size_t lstart = nstart + nraw + 1;   // skip the name's NUL
   if (lstart < (size_t)n) {
     size_t lraw = 0;
@@ -57,6 +64,15 @@ static bool read_entry(uint8_t i, Fav *out) {
     size_t llen = lraw >= FAV_LABEL_LEN ? FAV_LABEL_LEN - 1 : lraw;
     memcpy(out->label, buf + lstart, llen);
     out->label[llen] = '\0';
+    // agency: bytes after the label's NUL ("" for pre-agency blobs).
+    size_t astart = lstart + lraw + 1;
+    if (astart < (size_t)n) {
+      size_t araw = 0;
+      while (astart + araw < (size_t)n && buf[astart + araw] != '\0') araw++;
+      size_t alen = araw >= FAV_AGENCY_LEN ? FAV_AGENCY_LEN - 1 : araw;
+      memcpy(out->agency, buf + astart, alen);
+      out->agency[alen] = '\0';
+    }
   }
   return true;
 }
@@ -75,6 +91,7 @@ static void migrate_legacy(void) {
       strncpy(s_favs[0].name, id, FAV_NAME_LEN - 1);
       s_favs[0].name[FAV_NAME_LEN - 1] = '\0';
       s_favs[0].label[0] = '\0';
+      s_favs[0].agency[0] = '\0';
       s_count = 1;
       write_entry(0);
     }
@@ -119,6 +136,7 @@ bool favorites_add(const char *id, const char *name) {
   strncpy(f->id, id, FAV_ID_LEN - 1);   f->id[FAV_ID_LEN - 1] = '\0';
   strncpy(f->name, name ? name : id, FAV_NAME_LEN - 1); f->name[FAV_NAME_LEN - 1] = '\0';
   f->label[0] = '\0';
+  f->agency[0] = '\0';   // ring-added from the live board; the watch doesn't carry agency, so id-only resolves it
   write_entry(s_count);
   s_count++;
   persist_count();
@@ -167,6 +185,7 @@ void favorites_replace_all(const Fav *items, uint8_t n) {
     strncpy(s_favs[w].id, items[i].id, FAV_ID_LEN - 1);       s_favs[w].id[FAV_ID_LEN - 1] = '\0';
     strncpy(s_favs[w].name, items[i].name, FAV_NAME_LEN - 1); s_favs[w].name[FAV_NAME_LEN - 1] = '\0';
     strncpy(s_favs[w].label, items[i].label, FAV_LABEL_LEN - 1); s_favs[w].label[FAV_LABEL_LEN - 1] = '\0';
+    strncpy(s_favs[w].agency, items[i].agency, FAV_AGENCY_LEN - 1); s_favs[w].agency[FAV_AGENCY_LEN - 1] = '\0';
     write_entry(w);
     w++;
   }

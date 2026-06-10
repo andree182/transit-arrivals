@@ -1,4 +1,4 @@
-var ID_MAX = 15, NAME_MAX = 47, LABEL_MAX = 23;
+var ID_MAX = 15, NAME_MAX = 47, LABEL_MAX = 23, AGENCY_MAX = 11;
 
 function pushStr(arr, s, max) {
   var bytes = [];
@@ -20,6 +20,7 @@ function encodeFavList(nearestPos, favs) {
     pushStr(out, favs[i].id || '', ID_MAX);
     pushStr(out, favs[i].name || '', NAME_MAX);
     pushStr(out, favs[i].label || '', LABEL_MAX);
+    pushStr(out, favs[i].agency || '', AGENCY_MAX);   // agency for collision-free (agency,id) lookup
   }
   return new Uint8Array(out);
 }
@@ -48,7 +49,8 @@ function decodeFavList(bytes) {
   var count = b[pos.i++];
   var favs = [];
   for (var i = 0; i < count; i++) {
-    favs.push({ id: readStr(b, pos), name: readStr(b, pos), label: readStr(b, pos) });
+    // agency reads '' on a short/legacy 3-field blob (readStr returns '' at end-of-buffer).
+    favs.push({ id: readStr(b, pos), name: readStr(b, pos), label: readStr(b, pos), agency: readStr(b, pos) });
   }
   return { nearestPos: nearestPos, favs: favs };
 }

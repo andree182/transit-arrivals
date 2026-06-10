@@ -185,6 +185,11 @@ static SettingsRow settings_row(uint16_t r) {
 static bool s_tx_busy = false;
 static bool s_tx_refresh = false;
 static bool s_tx_favsync = false;
+// Per-request token, echoed by the phone so we can drop a stale reply that lands
+// after we've already navigated to a different station (the empty no-key agencies
+// reply fast and would otherwise clobber a slower bundle). A decimal STRING, to
+// dodge JS<->C int-width ambiguity across AppMessage.
+static uint32_t s_req_token = 0;
 
 static void tx_pump(void) {
   if (s_tx_busy) return;
@@ -192,12 +197,17 @@ static void tx_pump(void) {
   if (s_tx_refresh) {
     if (app_message_outbox_begin(&out) != APP_MSG_OK) return;  // retry on next sent/failed
     dict_write_uint8(out, MESSAGE_KEY_Request, 1);
+    char tok[12];
+    snprintf(tok, sizeof(tok), "%u", (unsigned)s_req_token);
+    dict_write_cstring(out, MESSAGE_KEY_Req, tok);
     if (ring_is_nearest(s_sel)) {
       dict_write_uint8(out, MESSAGE_KEY_UseNearest, 1);
     } else {
       const Fav *f = favorites_get(ring_fav_index(s_sel));
-      if (f) dict_write_cstring(out, MESSAGE_KEY_StationId, f->id);
-      else   dict_write_uint8(out, MESSAGE_KEY_UseNearest, 1);
+      if (f) {
+        dict_write_cstring(out, MESSAGE_KEY_StationId, f->id);
+        dict_write_cstring(out, MESSAGE_KEY_Agency, f->agency);   // "" for legacy favorites -> id-only resolve
+      } else dict_write_uint8(out, MESSAGE_KEY_UseNearest, 1);
     }
     if (app_message_outbox_send() == APP_MSG_OK) { s_tx_refresh = false; s_tx_busy = true; }
     return;
@@ -220,6 +230,7 @@ static void request_refresh(void) {
   app_timer_register(1500, stub_arrive, NULL);   // emulate the phone's feed reply
   return;
 #endif
+  s_req_token++;      // new logical request; any reply tagged with an older token is stale
   connect_wd_arm();   // restart the unreachable-phone clock for this attempt
   s_tx_refresh = true; tx_pump();
 }
@@ -937,6 +948,11 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
   }
   Tuple *err = dict_find(iter, MESSAGE_KEY_ErrorCode);
   Tuple *bun = dict_find(iter, MESSAGE_KEY_Bundle);
+  // Drop a stale station reply: a Req tag that doesn't match the latest request
+  // means we navigated away before it arrived (e.g. an empty no-key agency's fast
+  // ErrorCode racing a slower bundle). Untagged messages (startup ack) pass.
+  Tuple *reqt = dict_find(iter, MESSAGE_KEY_Req);
+  if (reqt && (uint32_t)atoi(reqt->value->cstring) != s_req_token) return;
   if (bun) {
     char prev_id[12];
     prev_id[0] = '\0';

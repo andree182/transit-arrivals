@@ -2,14 +2,27 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { encodeFavList, decodeFavList } = require('./favsync');
 
-test('round-trips a list with labels and empty labels', () => {
+test('round-trips a list with labels, empty labels, and agency', () => {
   const favs = [
-    { id: 'L16', name: 'DeKalb Av (L)', label: 'Home' },
-    { id: 'R30', name: 'DeKalb Av (BQR)', label: '' },
+    { id: 'L16', name: 'DeKalb Av (L)', label: 'Home', agency: 'mta' },
+    { id: 'R30', name: 'DeKalb Av (BQR)', label: '', agency: 'mta' },
   ];
   const out = decodeFavList(encodeFavList(0, favs));
   assert.strictEqual(out.nearestPos, 0);
   assert.deepStrictEqual(out.favs, favs);
+});
+
+test('round-trips agency so (agency,id) lookups survive (A02 wmata vs mta)', () => {
+  const favs = [{ id: 'A02', name: 'Farragut North', label: '', agency: 'wmata' }];
+  assert.strictEqual(decodeFavList(encodeFavList(0, favs)).favs[0].agency, 'wmata');
+});
+
+test('a legacy 3-field blob decodes with agency = "" (graceful)', () => {
+  // Hand-build a pre-agency blob: [nearestPos, count, id(len+bytes), name(...), label(...)]
+  const s = a => [a.length].concat(Array.prototype.map.call(a, c => c.charCodeAt(0)));
+  const blob = [0, 1].concat(s('A')).concat(s('Alpha')).concat(s(''));
+  const out = decodeFavList(blob);
+  assert.deepStrictEqual(out.favs[0], { id: 'A', name: 'Alpha', label: '', agency: '' });
 });
 
 test('carries nearestPos 255 (off) and the empty list', () => {
@@ -52,7 +65,7 @@ test('decodes truncated trailing bytes without reading past the field', () => {
 });
 
 test('accepts a plain number array (AppMessage payload form)', () => {
-  const bytes = Array.prototype.slice.call(encodeFavList(0, [{ id: 'A', name: 'Alpha', label: 'Home' }]));
+  const bytes = Array.prototype.slice.call(encodeFavList(0, [{ id: 'A', name: 'Alpha', label: 'Home', agency: 'cta' }]));
   const out = decodeFavList(bytes);
-  assert.deepStrictEqual(out.favs, [{ id: 'A', name: 'Alpha', label: 'Home' }]);
+  assert.deepStrictEqual(out.favs, [{ id: 'A', name: 'Alpha', label: 'Home', agency: 'cta' }]);
 });

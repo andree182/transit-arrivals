@@ -171,3 +171,10 @@ test('nearest station to a Tren Urbano stop is a trenurbano station', () => {
   const s = nearestStation(18.40035, -66.15375);
   assert.strictEqual(s.agency, 'trenurbano');
 });
+
+test('getStation resolves colliding ids by agency (MTA vs WMATA A02)', () => {
+  // "A02" exists in both MTA and WMATA; id-only returns the concat-first (MTA).
+  assert.strictEqual(getStation('A02').agency, 'mta');
+  assert.strictEqual(getStation('A02', 'wmata').agency, 'wmata');
+  assert.strictEqual(getStation('A02', 'mta').agency, 'mta');
+});

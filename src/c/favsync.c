@@ -25,6 +25,7 @@ size_t favsync_encode(uint8_t nearest_pos, uint8_t *buf, size_t cap) {
     if (!put_str(buf, cap, &off, f->id, FAV_ID_LEN - 1)) return 0;
     if (!put_str(buf, cap, &off, f->name, FAV_NAME_LEN - 1)) return 0;
     if (!put_str(buf, cap, &off, f->label, FAV_LABEL_LEN - 1)) return 0;
+    if (!put_str(buf, cap, &off, f->agency, FAV_AGENCY_LEN - 1)) return 0;
   }
   return off;
 }
@@ -52,6 +53,9 @@ int favsync_decode(const uint8_t *p, size_t len, Fav *out_items, uint8_t *out_ne
     if (!get_str(p, len, &off, out_items[i].id, FAV_ID_LEN)) return -1;
     if (!get_str(p, len, &off, out_items[i].name, FAV_NAME_LEN)) return -1;
     if (!get_str(p, len, &off, out_items[i].label, FAV_LABEL_LEN)) return -1;
+    // agency tolerates a legacy 3-field tail: "" if the blob ends here.
+    out_items[i].agency[0] = '\0';
+    if (off < len) { if (!get_str(p, len, &off, out_items[i].agency, FAV_AGENCY_LEN)) return -1; }
   }
   return count;
 }

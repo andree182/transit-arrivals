@@ -1,6 +1,6 @@
 # Transit Arrivals — Changelog
 
-## 1.9 (in progress)
+## 1.9
 
 **Four new cities — live rail.**
 
@@ -17,6 +17,12 @@
 PATCO and Tren Urbano don't publish real-time data, so their countdowns come from the official published timetable and are clearly marked **"SCHED"** on the watch — honest scheduled times, never a fake "live" number.
 
 That brings the app to **thirteen transit systems**. Miami, Baltimore, and Honolulu stream live once their real-time keys are configured; Cleveland, PATCO, and Tren Urbano work immediately.
+
+**Also**
+
+- **Right station, every time.** Favorites now remember which agency they belong to, so stations that share an internal ID across cities (a few NYC and DC stops do) always load the correct system's arrivals.
+- **No more flicker between stations.** Quickly flipping past stations no longer lets a slow reply land on the wrong one — each request is tracked and stale answers are ignored.
+- Error cards (**"No trains"**, "No phone") now show the station name, and very-distant scheduled times (a couple hours out, overnight) display the minutes cleanly instead of clipping.
 
 ---
 

@@ -52,7 +52,14 @@ function nearestStation(lat, lon) {
   return best;
 }
 
-function getStation(id) {
+function getStation(id, agency) {
+  // Prefer an exact (agency, id) match so colliding ids across systems (e.g. MTA
+  // and WMATA both have "A02") resolve to the intended agency. Fall back to
+  // id-only for legacy favorites that carry no agency.
+  if (agency) {
+    for (var a = 0; a < DB.length; a++) if (DB[a].id === id && DB[a].agency === agency) return DB[a];
+    for (var b = 0; b < DB.length; b++) if (DB[b].agency === agency && DB[b].ids && DB[b].ids.indexOf(id) >= 0) return DB[b];
+  }
   for (var i = 0; i < DB.length; i++) if (DB[i].id === id) return DB[i];
   // A favorite saved before a complex merge may hold a member id; resolve it.
   for (var j = 0; j < DB.length; j++) if (DB[j].ids && DB[j].ids.indexOf(id) >= 0) return DB[j];

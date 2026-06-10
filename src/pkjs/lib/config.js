@@ -61,11 +61,13 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 'var c=document.getElementById("favs");c.innerHTML="";' +
 'state.favs.forEach(function(f,i){' +
 'var fs=favStation(f.id);' +
-'if(!applyCity(fs||{}))return;' +
+// City filter + badge key off the favorite's own agency (collisions like MTA/WMATA
+// "A02" would mis-badge from an id-only DB lookup); fs supplies any other fields.
+'if(!applyCity(f.agency?f:(fs||{})))return;' +
 'var row=document.createElement("div");row.className="fav";' +
 'var metaDiv=document.createElement("div");metaDiv.className="meta";' +
 'var nm=document.createElement("div");nm.className="name";' +
-'var badge=badgeEl(fs);if(badge)nm.appendChild(badge);' +
+'var badge=badgeEl(f.agency?f:fs);if(badge)nm.appendChild(badge);' +
 'var nameSpan=document.createElement("span");nameSpan.textContent=f.name;nm.appendChild(nameSpan);' +
 'var inp=document.createElement("input");inp.placeholder="Label (optional)";inp.value=f.label||"";' +
 'inp.oninput=function(){state.favs[i].label=inp.value;};' +
@@ -91,8 +93,8 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 '}' +
 'function add(st){' +
 'if(state.favs.length>=MAX)return;' +
-'for(var k=0;k<state.favs.length;k++)if(state.favs[k].id===st.id)return;' +
-'state.favs.push({id:st.id,name:disp(st),label:""});' +
+'for(var k=0;k<state.favs.length;k++)if(state.favs[k].id===st.id&&state.favs[k].agency===st.agency)return;' +
+'state.favs.push({id:st.id,name:disp(st),label:"",agency:st.agency});' +
 'document.getElementById("search").value="";search("");renderFavs();' +
 '}' +
 'document.getElementById("search").addEventListener("input",function(e){search(e.target.value);});' +
