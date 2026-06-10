@@ -1,5 +1,21 @@
 # Transit Arrivals — Changelog
 
+## 1.10
+
+**The reliability release.** No new cities this time — instead, a top-to-bottom hardening pass across all ten systems, with every fix verified live, station by station.
+
+- **Instant launch, for real.** The watch keeps your last board on hand and flips it in the moment the app opens while fresh times load behind it. A storage limit meant this silently never worked for stations with more than two lines — exactly the busy stations where it matters. Fixed; big boards now appear instantly.
+- **Chicago's big downtown stations can be favorites again.** Multi-platform CTA complexes like **Jackson/Library** carry a long internal ID that was getting truncated in three different places, leaving a favorite that could never load. The whole pipeline now carries the full ID, end to end.
+- **No more endless spinner.** A connection that stalls mid-request (hello, subway platforms) used to hang until the watchdog gave up with the wrong message. Every request now times out cleanly and tells you what actually happened.
+- **Honest when you're out of range.** Outside the ten covered systems, the app used to quietly show you a live Times Square board. Now it says so: *"No covered station nearby — pick a city in the phone app."*
+- **Philadelphia: departed trains stay departed.** SEPTA's live feed kept already-left trains in its data; they no longer appear on your board.
+- **Chicago: Red and Orange look different now.** The watch's 64-color palette was squeezing both lines into nearly the same red. The bullet is how you identify a line at a glance, so the two now land on clearly distinct shades.
+- **Round watches polished.** The station position indicator ("2/4") was clipped by the circular bezel — now it computes the curve for each display size, so it sits cleanly on both Pebble Time Round and Pebble Time 2 Round.
+- **Error cards tell the truth.** "Nothing scheduled" no longer appears when the real story is a feed problem, and an error card can no longer caption itself with a cached station from a different city.
+- **Accented alert text is safe.** Service alerts with em-dashes and accents (San Juan, we see you) are now measured in bytes, not characters, so a long non-English alert can't get dropped in transit.
+
+---
+
 ## 1.9
 
 **A new city — live rail.**
