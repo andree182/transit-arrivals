@@ -1102,9 +1102,14 @@ static void stub_arrive(void *ctx) {
 // last-loaded station for the Nearest slot. Used so error/loading cards keep a
 // station-name footer instead of floating context-free.
 static const char *current_station_name(void) {
-  if (ring_is_nearest(s_sel)) return s_have_bundle ? s_bundle.station : "Nearest";
+  if (ring_is_nearest(s_sel)) {
+    // Only trust the bundle's name while it's fresh: a stale bundle (e.g. the
+    // persisted cache from another city) would caption a Nearest error card
+    // with somewhere the rider isn't.
+    return (s_have_bundle && !bundle_stale()) ? s_bundle.station : "Nearest";
+  }
   const Fav *f = favorites_get(ring_fav_index(s_sel));
-  return (f && f->name[0]) ? f->name : (s_have_bundle ? s_bundle.station : "");
+  return (f && f->name[0]) ? f->name : (s_have_bundle && !bundle_stale() ? s_bundle.station : "");
 }
 
 static void canvas_update(Layer *layer, GContext *ctx) {
@@ -1166,11 +1171,20 @@ static void canvas_update(Layer *layer, GContext *ctx) {
     static char pos[12];
     snprintf(pos, sizeof(pos), "%d/%d", (int)s_sel + 1, (int)ring_len());
     graphics_context_set_text_color(ctx, GColorLightGray);
-    // Round: at y=2 the bezel arc clips x<~70, so tuck the indicator down to
-    // y=20 / x=36 — inside the circle, mirroring the alert badge's top-right
-    // inset. Rect keeps the tight top-left corner.
-    int pos_inset = PBL_IF_ROUND_ELSE(36, 4);
+    // Round: the bezel arc clips the top-left corner, and how far in it cuts
+    // depends on the radius (chalk 180 vs gabbro 260). Compute the chord
+    // half-width at the indicator's top glyph row and inset past it, instead
+    // of a fixed offset tuned to one device. Rect keeps the tight corner.
     int pos_top = PBL_IF_ROUND_ELSE(20, 2);
+#if defined(PBL_ROUND)
+    int rr = b.size.w / 2;
+    int dy = rr - pos_top - 2;                 // glyph top sits ~2 px into the box
+    int q = rr * rr - dy * dy;
+    int half = 0; while ((half + 1) * (half + 1) <= q) half++;
+    int pos_inset = rr - half + 2;
+#else
+    int pos_inset = 4;
+#endif
     graphics_draw_text(ctx, pos, fonts_get_system_font(FONT_KEY_GOTHIC_14),
       GRect(pos_inset, pos_top, 40, 16), GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   }
