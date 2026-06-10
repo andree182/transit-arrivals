@@ -142,22 +142,20 @@ test('nearest station to downtown Cleveland is a GCRTA stop', () => {
   assert.strictEqual(s.agency, 'gcrta');
 });
 
-test('nearest station to downtown Miami is a Miami Metrorail/Metromover station', () => {
-  // Government Center Metromover: 25.7759, -80.1961
-  const s = nearestStation(25.7759, -80.1961);
-  assert.strictEqual(s.agency, 'miami');
-});
-
-test('nearest station to Owings Mills is a Baltimore MDOT MTA station', () => {
-  // Owings Mills Metro terminal: 39.4073509, -76.779895
-  const s = nearestStation(39.4073509, -76.779895);
-  assert.strictEqual(s.agency, 'baltimore');
-});
-
-test('nearest station near East Kapolei is a Skyline station', () => {
-  // Kualaka\'i East Kapolei Skyline station: 21.345574, -158.050995
-  const s = nearestStation(21.345574, -158.050995);
-  assert.strictEqual(s.agency, 'skyline');
+// Miami / Baltimore / Honolulu are built in but NOT YET LIVE (no Swiftly key), so
+// they're filtered out of the search DB — none of their stations should appear, and
+// nothing should resolve to those agencies. Flip them on (stations.js NOT_YET_LIVE)
+// once the keys are configured, then restore the nearest-station assertions below.
+test('not-yet-live agencies are hidden from the station DB', () => {
+  const present = {};
+  stations._db.forEach(function (s) { present[s.agency] = true; });
+  assert.ok(!present.miami, 'miami should be hidden');
+  assert.ok(!present.baltimore, 'baltimore should be hidden');
+  assert.ok(!present.skyline, 'skyline should be hidden');
+  // Live agencies stay searchable.
+  assert.ok(present.gcrta && present.patco && present.trenurbano);
+  // A point in downtown Miami must not resolve to a (hidden) miami station.
+  assert.notStrictEqual(nearestStation(25.7759, -80.1961).agency, 'miami');
 });
 
 test('nearest station to a PATCO stop is a patco station', () => {
