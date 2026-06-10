@@ -2,12 +2,9 @@
 
 ## 1.9
 
-**Four new cities — live rail.**
+**A new city — live rail.**
 
-- **Cleveland — GCRTA.** The Red Line (heavy rail) plus the Blue, Green, and Waterfront light-rail lines, with live predictions and service alerts. No key required.
-- **Miami — Metrorail & Metromover.** Metrorail plus the downtown Metromover people-mover loops, with live arrivals (via Swiftly).
-- **Baltimore — MDOT MTA.** Metro SubwayLink and Light RailLink, with live arrivals and the agency's open service-alerts feed.
-- **Honolulu — Skyline.** O‘ahu's new automated metro, with live arrivals (via TheBus real-time feed).
+- **Cleveland — GCRTA.** The Red Line (heavy rail) plus the Blue, Green, and Waterfront light-rail lines, with live predictions and service alerts.
 
 **Two more cities — scheduled rail.**
 
@@ -16,7 +13,7 @@
 
 PATCO and Tren Urbano don't publish real-time data, so their countdowns come from the official published timetable and are clearly marked **"SCHED"** on the watch — honest scheduled times, never a fake "live" number.
 
-That brings the app to **thirteen transit systems**. Miami, Baltimore, and Honolulu stream live once their real-time keys are configured; Cleveland, PATCO, and Tren Urbano work immediately.
+That brings the app to **ten transit systems**.
 
 **Also**
 
