@@ -24,9 +24,11 @@ function parseCsv(text) {
 }
 function readDir(dir) {
   const rd = f => parseCsv(fs.readFileSync(path.join(dir, f), 'utf8'));
+  const opt = f => { try { return rd(f); } catch (e) { return []; } };
   return {
     stops: rd('stops.txt'), routes: rd('routes.txt'),
-    trips: rd('trips.txt'), stopTimes: rd('stop_times.txt')
+    trips: rd('trips.txt'), stopTimes: rd('stop_times.txt'),
+    calendar: opt('calendar.txt'), calendarDates: opt('calendar_dates.txt')
   };
 }
 module.exports = { splitCsv, parseCsv, readDir };
