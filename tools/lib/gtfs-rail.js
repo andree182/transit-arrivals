@@ -121,6 +121,14 @@ function buildRailArtifacts(gtfs, cfg) {
     for (const s of stations) s.name = titleCase(s.name);
     for (const k of Object.keys(names)) names[k] = titleCase(names[k]);
   }
+  // Optional: drop non-passenger entries (yards/depots/divisions) that appear in
+  // stop_times but aren't riders' stations.
+  if (cfg.excludeNameRe) {
+    stations = stations.filter(s => {
+      if (cfg.excludeNameRe.test(s.name)) { delete stationStops[s.id]; return false; }
+      return true;
+    });
+  }
   return { stations, data: { stations: stationStops, names, routes: routesOut } };
 }
 

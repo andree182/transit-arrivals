@@ -30,7 +30,8 @@ function main() {
     id: 'baltimore', agency: 'baltimore', railTypes: new Set([0, 1, 2]),
     labelFor,
     colorFor: (r, label) => label === 'M' ? [0, 128, 0] : [0, 116, 153],   // Metro green (#008000), Light Rail teal (#007499)
-    titleCase: true    // Metro names are ALL-CAPS in GTFS
+    titleCase: true,    // Metro names are ALL-CAPS in GTFS
+    excludeNameRe: /\b(division|yard|depot|shop|garage)\b/i   // drop non-passenger yard/division stops
   });
   fs.writeFileSync(path.join(__dirname, '../src/pkjs/lib/baltimore.stations.json'), JSON.stringify(stations));
   fs.writeFileSync(path.join(__dirname, '../cta-proxy/src/agencies/baltimore-data.json'), JSON.stringify(data));

@@ -12,7 +12,11 @@ export function buildModelFromTripUpdates(trips, stopIds, routeMap, names, now) 
   for (const trip of (Array.isArray(trips) ? trips : [])) {
     const rm = routeMap[trip.routeId];
     if (!rm) continue;
-    let hit = null;                          // earliest future stop_time at this station
+    // Earliest future stop_time for this trip at this station. Assumes one visit per
+    // trip (true for line-haul service and per-lap loop trips, e.g. Metromover, which
+    // GTFS-RT dispatches as separate trip instances); a single TripUpdate listing the
+    // same stop twice would surface only the earlier visit.
+    let hit = null;
     for (const s of trip.stops) {
       if (!stopIds.has(s.stopId) || s.time < now) continue;
       if (!hit || s.time < hit.time) hit = s;

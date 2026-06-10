@@ -85,3 +85,19 @@ test('titleCase normalizes SHOUTY names in station list and dest names', () => {
   assert.ok(stations.every(s => s.name === 'Ashby Station'));
   assert.ok(Object.values(data.names).every(n => n === 'Ashby Station'));
 });
+
+test('excludeNameRe drops non-passenger yard/depot entries and their stopIds', () => {
+  const yardGtfs = {
+    stops: [
+      { stop_id: 'st1', stop_name: 'Real Station', stop_lat: '41.5', stop_lon: '-81.7', location_type: '0', parent_station: '' },
+      { stop_id: 'yd1', stop_name: 'MTA Light Rail Division', stop_lat: '41.6', stop_lon: '-81.8', location_type: '0', parent_station: '' }
+    ],
+    routes: [{ route_id: 'L', route_short_name: 'LR', route_long_name: 'Light Rail', route_type: '0', route_color: '007499' }],
+    trips: [{ route_id: 'L', trip_id: 't', direction_id: '0' }],
+    stopTimes: [{ trip_id: 't', stop_id: 'st1', stop_sequence: '1' }, { trip_id: 't', stop_id: 'yd1', stop_sequence: '2' }]
+  };
+  const cfg = { id: 'b', agency: 'b', railTypes: new Set([0]), labelFor: () => 'LR', excludeNameRe: /\b(division|yard|depot)\b/i };
+  const { stations, data } = buildRailArtifacts(yardGtfs, cfg);
+  assert.deepStrictEqual(stations.map(s => s.id), ['st1']);
+  assert.strictEqual(data.stations.yd1, undefined);
+});
