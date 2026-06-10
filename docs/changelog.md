@@ -9,9 +9,14 @@
 - **Baltimore — MDOT MTA.** Metro SubwayLink and Light RailLink, with live arrivals and the agency's open service-alerts feed.
 - **Honolulu — Skyline.** O‘ahu's new automated metro, with live arrivals (via TheBus real-time feed).
 
-That brings the app to **eleven transit systems**. Miami, Baltimore, and Honolulu stream live once their real-time keys are configured; Cleveland is live immediately.
+**Two more cities — scheduled rail.**
 
-Phase 2 (coming next): **PATCO** (Philadelphia–South Jersey) and **Tren Urbano** (San Juan) on published timetables, clearly marked **"SCHED"** since those agencies don't publish real-time data.
+- **Philadelphia / South Jersey — PATCO.** The High Speed Line, every station.
+- **San Juan — Tren Urbano.** Puerto Rico's metro, every station.
+
+PATCO and Tren Urbano don't publish real-time data, so their countdowns come from the official published timetable and are clearly marked **"SCHED"** on the watch — honest scheduled times, never a fake "live" number.
+
+That brings the app to **thirteen transit systems**. Miami, Baltimore, and Honolulu stream live once their real-time keys are configured; Cleveland, PATCO, and Tren Urbano work immediately.
 
 ---
 
