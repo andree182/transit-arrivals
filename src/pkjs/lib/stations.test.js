@@ -165,3 +165,9 @@ test('nearest station to a PATCO stop is a patco station', () => {
   const s = nearestStation(39.91359, -75.06456);
   assert.strictEqual(s.agency, 'patco');
 });
+
+test('nearest station to a Tren Urbano stop is a trenurbano station', () => {
+  // Estación Bayamón: 18.40035, -66.15375
+  const s = nearestStation(18.40035, -66.15375);
+  assert.strictEqual(s.agency, 'trenurbano');
+});
