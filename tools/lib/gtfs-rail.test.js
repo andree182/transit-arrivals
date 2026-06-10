@@ -80,6 +80,17 @@ test('mergeByNameMeters collapses co-located same-name platforms but not distant
   assert.strictEqual(unmerged.stations.length, 3);
 });
 
+test('titleCase is Unicode-aware: keeps accents/apostrophes intact', () => {
+  const { titleCase } = require('./gtfs-rail.js');
+  assert.strictEqual(titleCase('ESTACIÓN BAYAMÓN'), 'Estación Bayamón');
+  assert.strictEqual(titleCase('SAGRADO CORAZÓN'), 'Sagrado Corazón');
+  assert.strictEqual(titleCase("HO'AE'AE"), "Ho'ae'ae");
+  assert.strictEqual(titleCase('PEARL HARBOR-HICKAM'), 'Pearl Harbor-Hickam');
+  assert.strictEqual(titleCase('TRI-C CAMPUS DISTRICT (E. 34TH)'), 'Tri-C Campus District (E. 34th)');
+  assert.strictEqual(titleCase('BISCAYNE BD@E FLAGLER ST'), 'Biscayne Bd@E Flagler St');
+  assert.strictEqual(titleCase('34TH STREET'), '34th Street');
+});
+
 test('titleCase normalizes SHOUTY names in station list and dest names', () => {
   const { stations, data } = buildRailArtifacts(lrtGtfs, { ...lrtCfg, mergeByNameMeters: 300, titleCase: true });
   assert.ok(stations.every(s => s.name === 'Ashby Station'));

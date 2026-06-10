@@ -1,5 +1,5 @@
 'use strict';
-const { buildRailArtifacts } = require('./gtfs-rail.js');
+const { buildRailArtifacts, titleCase } = require('./gtfs-rail.js');
 
 function parseGtfsTime(s) {
   const m = /^(\d+):(\d{2}):(\d{2})$/.exec(String(s || '').trim());
@@ -51,7 +51,7 @@ function buildScheduleArtifacts(gtfs, cfg) {
       for (const sid of Object.keys(stops[station][dir]))
         stops[station][dir][sid].sort((a, b) => a - b);
 
-  const tc = cfg.titleCase ? (s => String(s).toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase())) : (s => s);
+  const tc = cfg.titleCase ? titleCase : (s => s);
   const dirDest = {};
   for (const dir of Object.keys(headCount)) {
     dirDest[dir] = tc(Object.entries(headCount[dir]).sort((a, b) => b[1] - a[1])[0][0]);

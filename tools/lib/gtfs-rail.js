@@ -15,8 +15,13 @@ function haversineM(aLat, aLon, bLat, bLon) {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
+// Title-case the first letter of each word. A word starts at the beginning of the
+// string or after any character that is NOT a letter, digit, or apostrophe — so
+// spaces/hyphens/slashes/parens/periods/'@' all start a new word, but mid-word
+// accents, digit runs (34th), and apostrophes (Hoʻaeʻae) do not. Unicode-aware via
+// \p{L}, fixing the old ASCII-\b "CorazóN" / "Ho'Ae'Ae" / "34Th" mangling.
 function titleCase(s) {
-  return String(s || '').toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
+  return String(s || '').toLowerCase().replace(/(^|[^\p{L}\d'’])(\p{L})/gu, (m, b, c) => b + c.toUpperCase());
 }
 
 // Merge station rows that share a name and sit within `distM` of each other into one
@@ -132,4 +137,4 @@ function buildRailArtifacts(gtfs, cfg) {
   return { stations, data: { stations: stationStops, names, routes: routesOut } };
 }
 
-module.exports = { buildRailArtifacts, hexToRgb };
+module.exports = { buildRailArtifacts, hexToRgb, titleCase };
