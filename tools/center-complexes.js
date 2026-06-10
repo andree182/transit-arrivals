@@ -43,14 +43,16 @@ var fixed = 0, missing = [];
 data.forEach(function (s) {
   var members = (s.ids || []).concat(s.pathIds || []);
   if (members.length < 2) return;            // single-platform stations are already centred
-  var la = 0, lo = 0, n = 0;
+  var la = 0, lo = 0, pts = [];
   members.forEach(function (m) {
-    if (coord[m]) { la += coord[m][0]; lo += coord[m][1]; n++; }
+    if (coord[m]) { la += coord[m][0]; lo += coord[m][1]; pts.push([+coord[m][0].toFixed(5), +coord[m][1].toFixed(5)]); }
     else missing.push(s.id + '/' + m);
   });
-  if (!n) return;
-  var nlat = +(la / n).toFixed(6), nlon = +(lo / n).toFixed(6);
-  if (nlat !== s.lat || nlon !== s.lon) { s.lat = nlat; s.lon = nlon; fixed++; }
+  if (!pts.length) return;
+  s.lat = +(la / pts.length).toFixed(6);     // centroid: the map pin
+  s.lon = +(lo / pts.length).toFixed(6);
+  s.pts = pts;                               // every entrance/platform: nearest-station matches the CLOSEST one,
+  fixed++;                                   // so coverage hugs the complex's axis instead of a fat circle
 });
 fs.writeFileSync(DATA, JSON.stringify(data) + '\n');
-console.error('centered ' + fixed + ' complexes' + (missing.length ? '; missing coords for ' + missing.join(', ') : ''));
+console.error('centered + pts on ' + fixed + ' complexes' + (missing.length ? '; missing coords for ' + missing.join(', ') : ''));

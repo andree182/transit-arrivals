@@ -40,10 +40,27 @@ function haversine(aLat, aLon, bLat, bLon) {
 var SERVICE_RADIUS_M = 100000;
 var DEFAULT_STATION_ID = 'R16';   // Times Sq-42 St — the canonical fallback hub
 
+// Distance to a station: for a multi-entrance complex, the distance to its
+// CLOSEST platform (s.pts), so a spread-out complex (14 St: 1/2/3 at 7 Av, F/M/L
+// + PATH at 6 Av) is detected from any entrance — coverage hugs the line of
+// platforms instead of a single fat circle that misses the ends. Falls back to
+// the centroid (lat/lon) for ordinary single-platform stations.
+function stationDist(lat, lon, s) {
+  if (s.pts && s.pts.length) {
+    var m = Infinity;
+    for (var k = 0; k < s.pts.length; k++) {
+      var d = haversine(lat, lon, s.pts[k][0], s.pts[k][1]);
+      if (d < m) m = d;
+    }
+    return m;
+  }
+  return haversine(lat, lon, s.lat, s.lon);
+}
+
 function nearestStation(lat, lon) {
   var best = null, bestD = Infinity;
   for (var i = 0; i < DB.length; i++) {
-    var d = haversine(lat, lon, DB[i].lat, DB[i].lon);
+    var d = stationDist(lat, lon, DB[i]);
     if (d < bestD) { bestD = d; best = DB[i]; }
   }
   // Outside the service area (e.g. a user in LA): default to Times Square rather

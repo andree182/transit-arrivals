@@ -178,3 +178,12 @@ test('getStation resolves colliding ids by agency (MTA vs WMATA A02)', () => {
   assert.strictEqual(getStation('A02', 'wmata').agency, 'wmata');
   assert.strictEqual(getStation('A02', 'mta').agency, 'mta');
 });
+
+test('multi-point complex is nearest from each entrance, not a fat circle', () => {
+  // 14 St/6 Av (id 132): 1/2/3 at 7 Av, F/M/L + PATH at 6 Av (a block apart).
+  assert.strictEqual(nearestStation(40.73783, -74.00020).id, '132');  // 7 Av entrance
+  assert.strictEqual(nearestStation(40.73735, -73.99684).id, '132');  // 6 Av FML/PATH entrance
+  // Both ends resolve to the same complex, which carries all its lines.
+  assert.ok(nearestStation(40.73735, -73.99684).lines.indexOf('F') >= 0);
+  assert.ok(nearestStation(40.73735, -73.99684).lines.indexOf('L') >= 0);
+});
