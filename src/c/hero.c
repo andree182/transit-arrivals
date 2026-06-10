@@ -163,16 +163,18 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   float SX = bounds.size.w / REF_W, SY = bounds.size.h / REF_H;
   graphics_context_set_antialiased(ctx, true);
 
-  // Direction label (small gray caps) over the destination headsign. The phone
-  // sends the word straight in the bundle (a borough for MTA), or an empty string
-  // for services whose ends share a borough (shuttles, SIR) and for agencies with
-  // no direction word — there the headsign alone disambiguates.
+  // Top slot, over the destination headsign: normally the direction word (small
+  // gray caps — a borough for MTA, empty for shuttles/SIR and agencies with no
+  // direction word). For timetable-based lines (PATCO, Tren Urbano) that have no
+  // direction word, a small amber "SCHED" badge sits here instead, so the rider
+  // knows the countdowns come from the published schedule, not a live feed.
   int hdr_inset = PBL_IF_ROUND_ELSE(34, 4);
   int dir_top = (int)(6 * SY);
-  const char *dlabel = (D->dirLabel[0]) ? D->dirLabel : NULL;
-  if (dlabel) {
-    graphics_context_set_text_color(ctx, GColorLightGray);
-    graphics_draw_text(ctx, dlabel, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+  bool schedTag = (!D->dirLabel[0] && L->sched);
+  const char *topTag = (D->dirLabel[0]) ? D->dirLabel : (L->sched ? "SCHED" : NULL);
+  if (topTag) {
+    graphics_context_set_text_color(ctx, schedTag ? PBL_IF_COLOR_ELSE(GColorYellow, GColorWhite) : GColorLightGray);
+    graphics_draw_text(ctx, topTag, fonts_get_system_font(FONT_KEY_GOTHIC_14),
       GRect(hdr_inset, dir_top, bounds.size.w - 2 * hdr_inset, 16),
       GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
@@ -182,7 +184,7 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   // no direction word, the headsign rises to fill the freed top slot.
   GFont hdr = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
   graphics_context_set_text_color(ctx, GColorWhite);
-  int hdr_top = dir_top + (dlabel ? 14 : 2);
+  int hdr_top = dir_top + (topTag ? 14 : 2);
   int hdr_h = PBL_IF_ROUND_ELSE(38, 22);
   GTextOverflowMode hdr_of = PBL_IF_ROUND_ELSE(GTextOverflowModeWordWrap, GTextOverflowModeTrailingEllipsis);
   graphics_draw_text(ctx, D->dest, hdr, GRect(hdr_inset, hdr_top, bounds.size.w - 2 * hdr_inset, hdr_h),
