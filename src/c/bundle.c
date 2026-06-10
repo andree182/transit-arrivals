@@ -15,8 +15,9 @@ bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
   if (len < 56 || p[0] < 3 || p[0] > 8) return false;
   size_t i = 0;
   out->version = p[i++];
-  // v8 widened the id field 11 -> 23 bytes (4-mapid CTA complex ids).
-  size_t idw = out->version >= 8 ? 23 : 11;
+  // v8 widened the id field 11 -> 39 bytes (longest real id: SEPTA's 38-byte
+  // "septa-richmond-st-westmoreland-st-loop"; also CTA 4-mapid complexes).
+  size_t idw = out->version >= 8 ? 39 : 11;
   if (i + 4 + 39 + idw + 1 > len) return false;
   out->epochBase = rd_u32(p + i); i += 4;
   memcpy(out->station, p + i, 39); out->station[39] = 0; i += 39;

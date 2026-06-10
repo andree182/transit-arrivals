@@ -1,6 +1,7 @@
-// ID_MAX 23: a CTA complex id is up to 4 comma-joined 5-digit mapids
-// ("40070,40560,40850" at Jackson/Library). Must stay = FAV_ID_LEN - 1 (C side).
-var ID_MAX = 23, NAME_MAX = 47, LABEL_MAX = 23, AGENCY_MAX = 11;
+// ID_MAX 39: sized to the longest station id that actually exists —
+// SEPTA's "septa-richmond-st-westmoreland-st-loop" (38 bytes); also covers
+// MARTA's name ids and 4-mapid CTA complexes. Must stay = FAV_ID_LEN - 1 (C side).
+var ID_MAX = 39, NAME_MAX = 47, LABEL_MAX = 23, AGENCY_MAX = 11;
 
 function pushStr(arr, s, max) {
   var bytes = [];

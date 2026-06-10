@@ -160,6 +160,18 @@ test('not-yet-live agencies are hidden from the station DB', () => {
   assert.strictEqual(nearestStation(25.7759, -80.1961), null);
 });
 
+test('a favorite id truncated by the old caps still resolves by unique prefix', () => {
+  // Favorites saved under the old 15- and 23-byte id caps persist a truncated
+  // id forever (e.g. "septa-holmesbur"). Rescue them: an exact miss at a legacy
+  // cap length falls back to a UNIQUE prefix match instead of "Bad station".
+  const full = 'septa-holmesburg-junction';
+  assert.strictEqual(getStation(full.slice(0, 15), 'septa').id, full);
+  assert.strictEqual(getStation(full.slice(0, 23), 'septa').id, full);
+  assert.strictEqual(getStation('HAMILTON E HOLMES STATI'.slice(0, 23), 'marta').id, 'HAMILTON E HOLMES STATION');
+  // An ambiguous prefix (matches many stations) must NOT guess.
+  assert.strictEqual(getStation('septa-', 'septa'), null);
+});
+
 test('nearest station to a PATCO stop is a patco station', () => {
   // Collingswood PATCO: 39.91359, -75.06456
   const s = nearestStation(39.91359, -75.06456);

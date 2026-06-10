@@ -87,6 +87,20 @@ function getStation(id, agency) {
   for (var i = 0; i < DB.length; i++) if (DB[i].id === id) return DB[i];
   // A favorite saved before a complex merge may hold a member id; resolve it.
   for (var j = 0; j < DB.length; j++) if (DB[j].ids && DB[j].ids.indexOf(id) >= 0) return DB[j];
+  // Favorites saved under the old 15- / 23-byte id caps persist a TRUNCATED id
+  // (e.g. "septa-holmesbur"). If the id sits exactly at a legacy cap, resolve a
+  // UNIQUE prefix match; ambiguity stays a miss rather than a guess.
+  if (id && (id.length === 15 || id.length === 23)) {
+    var hit = null;
+    for (var k = 0; k < DB.length; k++) {
+      if (agency && DB[k].agency !== agency) continue;
+      if (DB[k].id.length > id.length && DB[k].id.indexOf(id) === 0) {
+        if (hit) return null;                 // two candidates: ambiguous
+        hit = DB[k];
+      }
+    }
+    if (hit) return hit;
+  }
   return null;
 }
 

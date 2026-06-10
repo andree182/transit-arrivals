@@ -11,7 +11,7 @@ typedef struct {
   uint8_t version;
   uint32_t epochBase;
   char station[40];
-  char id[24];     // v8: 23-byte wire field (4-mapid CTA complex) + NUL
+  char id[40];     // v8: 39-byte wire field (longest real id: SEPTA, 38 B) + NUL
   uint8_t nLines;
   LineView lines[MAX_LINES];
 } Bundle;

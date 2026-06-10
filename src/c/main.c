@@ -679,19 +679,29 @@ static void ring_prev(ClickRecognizerRef r, void *c) {
 // Per-station view memory: remembers the line+direction last viewed at each
 // station, keyed by station id, so returning to a station reopens on the line you
 // left it at (rather than always snapping back to the top line). An MRU table of
-// the most recent VIEWMEM_MAX stations, persisted whole under PERSIST_VIEWMEM so
+// the most recent VIEWMEM_MAX stations, persisted whole under PERSIST_VIEWMEM2 so
 // it survives app restarts. Covers favorites and the (GPS-varying) Nearest station
 // uniformly, since both resolve to a real station id.
 #define VIEWMEM_MAX 16
-typedef struct { char id[24]; uint8_t line; uint8_t dir; } ViewMem;  // id matches Bundle.id (v8)
+// Entries key on a 32-bit FNV-1a hash of the station id, not the id string:
+// full ids run up to 39 bytes (SEPTA), and 16 string-keyed entries would blow
+// the 256-byte persist cap. A hash collision merely restores the wrong
+// line/dir once — cosmetic.
+typedef struct { uint32_t idHash; uint8_t line; uint8_t dir; } ViewMem;
 static ViewMem s_viewmem[VIEWMEM_MAX];
 static uint8_t s_viewmem_n;
 
+static uint32_t id_hash(const char *id) {
+  uint32_t h = 2166136261u;                       // FNV-1a
+  for (const char *p = id; *p; p++) h = (h ^ (uint8_t)*p) * 16777619u;
+  return h;
+}
+
 static void viewmem_load(void) {
   s_viewmem_n = 0;
-  // The pre-v8 table (12-byte ids) lived under PERSIST_VIEWMEM with a different
-  // entry size; reading it as the new struct would garble. Drop it and start
-  // fresh under PERSIST_VIEWMEM2 — view memory is a cosmetic cache.
+  // The pre-v8 table (string-keyed entries) lived under PERSIST_VIEWMEM with a
+  // different entry size; reading it as the new struct would garble. Drop it
+  // and start fresh under PERSIST_VIEWMEM2 — view memory is a cosmetic cache.
   if (persist_exists(PERSIST_VIEWMEM)) persist_delete(PERSIST_VIEWMEM);
   if (!persist_exists(PERSIST_VIEWMEM2)) return;
   int sz = persist_read_data(PERSIST_VIEWMEM2, s_viewmem, sizeof(s_viewmem));
@@ -704,8 +714,9 @@ static void viewmem_load(void) {
 // line (0,0) when the station has never been seen. Always returns true so callers
 // can branch cleanly; values are clamped to the bundle by clamp_view afterward.
 static void viewmem_get(const char *id, uint8_t *line, uint8_t *dir) {
+  uint32_t h = id_hash(id);
   for (uint8_t i = 0; i < s_viewmem_n; i++) {
-    if (strncmp(s_viewmem[i].id, id, sizeof(s_viewmem[i].id)) == 0) {
+    if (s_viewmem[i].idHash == h) {
       *line = s_viewmem[i].line; *dir = s_viewmem[i].dir; return;
     }
   }
@@ -714,9 +725,10 @@ static void viewmem_get(const char *id, uint8_t *line, uint8_t *dir) {
 // Record `id`'s current line+dir at the front of the MRU table and persist.
 static void viewmem_put(const char *id, uint8_t line, uint8_t dir) {
   if (!id || !id[0]) return;
+  uint32_t h = id_hash(id);
   int at = -1;
   for (uint8_t i = 0; i < s_viewmem_n; i++)
-    if (strncmp(s_viewmem[i].id, id, sizeof(s_viewmem[i].id)) == 0) { at = i; break; }
+    if (s_viewmem[i].idHash == h) { at = i; break; }
   if (at >= 0) {
     if (s_viewmem[at].line == line && s_viewmem[at].dir == dir && at == 0) return;  // unchanged
   } else {
@@ -724,8 +736,7 @@ static void viewmem_put(const char *id, uint8_t line, uint8_t dir) {
   }
   // Shift [0..at) down by one and place the entry at the front (MRU).
   for (int i = at; i > 0; i--) s_viewmem[i] = s_viewmem[i - 1];
-  strncpy(s_viewmem[0].id, id, sizeof(s_viewmem[0].id) - 1);
-  s_viewmem[0].id[sizeof(s_viewmem[0].id) - 1] = 0;
+  s_viewmem[0].idHash = h;
   s_viewmem[0].line = line; s_viewmem[0].dir = dir;
   persist_write_data(PERSIST_VIEWMEM2, s_viewmem, (size_t)s_viewmem_n * sizeof(ViewMem));
 }
@@ -973,7 +984,7 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
   Tuple *reqt = dict_find(iter, MESSAGE_KEY_Req);
   if (reqt && (uint32_t)atoi(reqt->value->cstring) != s_req_token) return;
   if (bun) {
-    char prev_id[24];
+    char prev_id[40];
     prev_id[0] = '\0';
     if (s_have_bundle) { strncpy(prev_id, s_bundle.id, sizeof(prev_id) - 1); prev_id[sizeof(prev_id) - 1] = '\0'; }
     if (bundle_decode(bun->value->data, bun->length, &s_bundle)) {
@@ -1293,9 +1304,7 @@ static bool view_nearest(int *secs, uint32_t *key) {
   const DirView *D = &L->dirs[s_dir];
   if (D->n == 0) return false;
   *secs = (int)(s_bundle.epochBase + D->delta[0]) - (int)time(NULL);
-  uint32_t h = 2166136261u;                       // FNV-1a over the station id
-  for (const char *p = s_bundle.id; *p; p++) h = (h ^ (uint8_t)*p) * 16777619u;
-  *key = (h & 0xFFFF0000u) | ((uint32_t)s_line << 8) | s_dir;
+  *key = (id_hash(s_bundle.id) & 0xFFFF0000u) | ((uint32_t)s_line << 8) | s_dir;
   return true;
 }
 
@@ -1427,13 +1436,13 @@ static void init(void) {
   app_message_register_outbox_sent(outbox_sent);
   app_message_register_outbox_failed(outbox_failed);
   // Right-size the AppMessage buffers instead of asking for the 8200-byte maximum
-  // each (~16 KB of heap). The largest inbound payload is a Bundle (<=828 B, v8),
-  // an Alerts string (<=700 B), or a FavSet blob (<=1082 B); the largest outbound
-  // is a FavSync blob (<=1082 B). Reserving the full maximum starved the flip
+  // each (~16 KB of heap). The largest inbound payload is a Bundle (<=844 B, v8),
+  // an Alerts string (<=700 B), or a FavSet blob (<=1242 B); the largest outbound
+  // is a FavSync blob (<=1242 B). Reserving the full maximum starved the flip
   // animation on emery (200x228 → large per-glyph cell buffers), exhausting the
   // 78 KB app heap and faulting on big complex stations. 2 KB / 1.25 KB leaves
   // generous framing headroom while freeing ~13 KB.
-  app_message_open(2048, 1280);
+  app_message_open(2048, 1408);
 
   tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
   s_poll = app_timer_register(30000, poll_cb, NULL);

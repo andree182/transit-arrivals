@@ -44,19 +44,33 @@ test('clamps over-long fields to the C buffer sizes', () => {
   const longName = 'N'.repeat(80);
   const longLabel = 'L'.repeat(40);
   const out = decodeFavList(encodeFavList(0, [{ id: longId, name: longName, label: longLabel }]));
-  assert.strictEqual(out.favs[0].id.length, 23);
+  assert.strictEqual(out.favs[0].id.length, 39);
   assert.strictEqual(out.favs[0].name.length, 47);
   assert.strictEqual(out.favs[0].label.length, 23);
 });
 
-test('a composite CTA id (4 mapids worst case = 23 bytes) round-trips intact', () => {
-  // Jackson/Library is "40070,40560,40850" (17 bytes); the old 15-byte cap
-  // truncated it to "40070,40560,408", breaking the favorite forever.
-  const favs = [{ id: '40070,40560,40850', name: 'Jackson/Library', label: '', agency: 'cta' }];
-  assert.strictEqual(decodeFavList(encodeFavList(0, favs)).favs[0].id, '40070,40560,40850');
-  const worst = '40000,40001,40002,40003';   // 23 bytes: the regex-allowed maximum
-  const out = decodeFavList(encodeFavList(0, [{ id: worst, name: 'X', label: '', agency: 'cta' }]));
-  assert.strictEqual(out.favs[0].id, worst);
+test('the longest real station ids round-trip intact', () => {
+  // The old 15-byte cap truncated CTA composites ("40070,40560,40850") and
+  // SEPTA/MARTA name-based ids, breaking those favorites forever. The cap now
+  // covers the longest id that actually exists (SEPTA, 38 bytes).
+  const favs = [
+    { id: '40070,40560,40850', name: 'Jackson/Library', label: '', agency: 'cta' },
+    { id: 'septa-richmond-st-westmoreland-st-loop', name: 'Richmond-Westmoreland', label: '', agency: 'septa' },
+    { id: 'HAMILTON E HOLMES STATION', name: 'H.E. Holmes', label: '', agency: 'marta' },
+  ];
+  const out = decodeFavList(encodeFavList(0, favs));
+  assert.strictEqual(out.favs[0].id, '40070,40560,40850');
+  assert.strictEqual(out.favs[1].id, 'septa-richmond-st-westmoreland-st-loop');
+  assert.strictEqual(out.favs[2].id, 'HAMILTON E HOLMES STATION');
+});
+
+test('a worst-case favsync blob stays within the watch outbox budget', () => {
+  // 10 favorites, every field at max: must fit the C side's static buffer and
+  // the AppMessage outbox (1408 B) with framing headroom.
+  const favs = [];
+  for (var i = 0; i < 10; i++) favs.push({ id: 'X'.repeat(60), name: 'N'.repeat(80), label: 'L'.repeat(40), agency: 'trenurbano' });
+  const blob = encodeFavList(0, favs);
+  assert.ok(blob.length <= 1242, 'worst case is ' + blob.length + ' B, budget 1242');
 });
 
 test('never splits a multibyte character at the field-length cap', () => {

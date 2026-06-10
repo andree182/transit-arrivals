@@ -37,7 +37,7 @@ function encodeBundle(stationId, stationName, lines, epochBase) {
   b.push(8);                       // version
   putU32(b, epochBase);
   putStr(b, stationName, 39);
-  putStr(b, stationId, 23);        // v8: fits a 4-mapid CTA complex (4*5 + 3 commas)
+  putStr(b, stationId, 39);        // v8: fits the longest real id (SEPTA, 38 bytes)
   b.push(lines.length & 0xff);
   lines.forEach(function (ln) {
     putStr(b, ln.line, 2);
