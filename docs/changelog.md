@@ -23,6 +23,8 @@ That brings the app to **thirteen transit systems**. Miami, Baltimore, and Honol
 - **Right station, every time.** Favorites now remember which agency they belong to, so stations that share an internal ID across cities (a few NYC and DC stops do) always load the correct system's arrivals.
 - **No more flicker between stations.** Quickly flipping past stations no longer lets a slow reply land on the wrong one — each request is tracked and stale answers are ignored.
 - Error cards (**"No trains"**, "No phone") now show the station name, and very-distant scheduled times (a couple hours out, overnight) display the minutes cleanly instead of clipping.
+- **Big complexes detected from every entrance.** Sprawling stations like **14 St/6 Av** (1/2/3 at 7 Av, F/M/L + PATH a block east at 6 Av) are now matched from whichever entrance you're actually at, instead of from a single point stuck at one end.
+- **Every line, even on a hiccup.** If one of a station's live feeds momentarily fails, the app retries it once and then shows that line as **"NO DATA"** rather than hiding it — so you always see all the lines a station serves, never just the one whose feed happened to load.
 
 ---
 

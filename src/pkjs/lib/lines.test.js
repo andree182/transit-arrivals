@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { feedForLine, colorForLine, feedUrls } = require('./lines');
+const { feedForLine, colorForLine, feedUrls, feedGroups } = require('./lines');
 
 test('lines map to their GTFS-RT feed group', () => {
   assert.strictEqual(feedForLine('A'), 'ace');
@@ -42,4 +42,14 @@ test('PATH labels carry their service colors', () => {
 test('a PATH+subway mixed line list yields both feeds', () => {
   const urls = feedUrls(['NW', 'Q']); // path + nqrw
   assert.strictEqual(urls.length, 2);
+});
+
+test('feedGroups maps each feed to the lines it owns (for NO-DATA on failure)', () => {
+  var groups = feedGroups(['1', '2', '3', 'F', 'M', 'L']);
+  var byUrl = {};
+  groups.forEach(function (g) { byUrl[g.url] = g.lines.slice().sort(); });
+  // base feed owns 1/2/3; bdfm owns F/M; l owns L — three distinct feeds.
+  var all = groups.map(function (g) { return g.lines.slice().sort().join(''); }).sort();
+  assert.deepStrictEqual(all, ['123', 'FM', 'L']);
+  assert.strictEqual(groups.length, 3);
 });

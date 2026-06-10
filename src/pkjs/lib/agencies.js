@@ -58,19 +58,30 @@ function decorate(model) {
 }
 
 function getArrivals(station, cb) {
-  var urls = linesLib.feedUrls(station.lines);
-  var rows = [], pendingFeeds = urls.length, failedFeeds = 0;
+  var feeds = linesLib.feedGroups(station.lines);
+  var rows = [], pendingFeeds = feeds.length, failedFeeds = 0;
+  var failedLines = {};   // line -> true: its feed failed (after a retry), so its data is missing
   var alertsDone = false, suspensions = [], alerts = [];
 
   function finish() {
     if (!alertsDone || pendingFeeds > 0) return;
-    if (urls.length && failedFeeds === urls.length && !suspensions.length) return cb(3);
+    if (feeds.length && failedFeeds === feeds.length && !suspensions.length) return cb(3);
     var now = nowSecs();
     var ids = (station.ids || [station.id]).concat(station.pathIds || []);
     var rawModel = arrivalsLib.buildArrivals(rows, ids, now);
     suspensions.forEach(function (s) {
       var running = rawModel.some(function (m) { return m.line === s.code; });
       if (!running) rawModel.push({ line: s.code, directions: [], notice: s.reason });
+    });
+    // A feed that failed (even after one retry) would otherwise hide its lines
+    // entirely; surface them as NO DATA so the rider still sees every line the
+    // station serves (e.g. F/M/L at 14 St when the B-D-F-M or L feed hiccups),
+    // not just the lines whose feed happened to load. "No live arrivals" prefix
+    // makes the watch render "NO DATA" (same as SEPTA El/BSL).
+    Object.keys(failedLines).forEach(function (l) {
+      if (!rawModel.some(function (m) { return m.line === l; })) {
+        rawModel.push({ line: l, directions: [], notice: 'No live arrivals right now' });
+      }
     });
     if (!rawModel.length) return cb(4);
     cb(null, {
@@ -97,13 +108,23 @@ function getArrivals(station, cb) {
   ax.onerror = function () { console.log('[mta] alerts network FAIL'); alertsDone = true; finish(); };
   ax.send();
 
-  urls.forEach(function (url) {
+  // Fetch a feed; on a network error, retry once before giving up (a single
+  // transient hiccup shouldn't silently drop that feed's whole line group).
+  function fetchFeedRetry(url, done) {
     fetchFeed(url, function (err, buf) {
-      if (err) { failedFeeds++; console.log('[mta] feed FAIL ' + err.message + ' ' + url); }
+      if (!err) return done(null, buf);
+      fetchFeed(url, done);
+    });
+  }
+  feeds.forEach(function (f) {
+    fetchFeedRetry(f.url, function (err, buf) {
+      var failed = false;
+      if (err) { failed = true; console.log('[mta] feed FAIL ' + err.message + ' ' + f.url); }
       else {
         try { rows = rows.concat(gtfsrt.extractStopTimes(buf)); }
-        catch (e) { failedFeeds++; console.log('[mta] parse EXC ' + e.message + ' ' + url); }
+        catch (e) { failed = true; console.log('[mta] parse EXC ' + e.message + ' ' + f.url); }
       }
+      if (failed) { failedFeeds++; f.lines.forEach(function (l) { failedLines[l] = true; }); }
       pendingFeeds--; finish();
     });
   });

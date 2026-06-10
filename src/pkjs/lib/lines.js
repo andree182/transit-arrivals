@@ -47,4 +47,23 @@ function feedUrls(lines) {
     return g === 'path' ? PATH_URL : BASE + GROUPS[g];
   });
 }
-module.exports = { feedForLine: feedForLine, colorForLine: colorForLine, feedUrls: feedUrls, _groups: GROUPS };
+// Like feedUrls, but keeps each feed's owned lines so a failed fetch can map back
+// to the lines it hides (shown as NO DATA). Supplementary feeds pulled only via
+// EXTRA_GROUPS (e.g. the ace feed for an S shuttle) own no lines.
+function feedGroups(lines) {
+  var owned = {};       // groupKey -> [lines]
+  var extra = {};       // supplementary groupKey -> true
+  lines.forEach(function (l) {
+    var g = feedForLine(l);
+    if (g) (owned[g] = owned[g] || []).push(l);
+    var ex = EXTRA_GROUPS[l]; if (ex) ex.forEach(function (e) { extra[e] = true; });
+  });
+  var out = Object.keys(owned).map(function (g) {
+    return { url: g === 'path' ? PATH_URL : BASE + GROUPS[g], lines: owned[g] };
+  });
+  Object.keys(extra).forEach(function (e) {
+    if (!owned[e]) out.push({ url: BASE + GROUPS[e], lines: [] });
+  });
+  return out;
+}
+module.exports = { feedForLine: feedForLine, colorForLine: colorForLine, feedUrls: feedUrls, feedGroups: feedGroups, _groups: GROUPS };
