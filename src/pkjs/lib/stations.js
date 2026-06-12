@@ -105,12 +105,24 @@ function getStation(id, agency) {
   return null;
 }
 
-function displayName(station) {
-  if (station.sys === 'path') return station.name + ' · PATH';
-  var lines = (station.lines && station.lines.length)
-    ? ' (' + station.lines.join('') + ')'
-    : '';
-  return station.name + lines;
+// Bullet summary for a line list: subway bullets joined, PATH service codes
+// (JH, W3, ... — nonsense next to subway bullets) collapsed to one "PATH" tag.
+// Self-contained ES5 (set inlined): config injects this function's SOURCE into
+// the phone config page via Function.prototype.toString.
+function lineSummary(lines) {
+  var PATH_SET = { NW: 1, HW: 1, W3: 1, JS: 1, JH: 1, NH: 1, H3: 1 };
+  var sub = '', hasPath = false;
+  for (var i = 0; lines && i < lines.length; i++) {
+    if (PATH_SET[lines[i]]) hasPath = true; else sub += lines[i];
+  }
+  if (hasPath) return sub ? sub + ' · PATH' : 'PATH';
+  return sub;
 }
 
-module.exports = { nearestStation: nearestStation, getStation: getStation, displayName: displayName, _db: DB };
+function displayName(station) {
+  if (station.sys === 'path') return station.name + ' · PATH';
+  var s = lineSummary(station.lines);
+  return station.name + (s ? ' (' + s + ')' : '');
+}
+
+module.exports = { nearestStation: nearestStation, getStation: getStation, displayName: displayName, lineSummary: lineSummary, _db: DB };

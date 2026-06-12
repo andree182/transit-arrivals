@@ -52,10 +52,11 @@ test('nearestStation still returns a real nearby station inside the area', () =>
   assert.notStrictEqual(li.id, 'R16');
 });
 
-test('displayName tags a pure PATH station but not a merged subway one', () => {
-  assert.strictEqual(displayName(getStation('26733')), 'Newark · PATH');
-  const u14 = getStation('132');                    // 14 St, merged with PATH
-  assert.ok(displayName(u14).indexOf('· PATH') < 0);
+test('displayName folds PATH bullets into one PATH tag instead of bullet soup', () => {
+  // "(123FMLJHW3H3JS)" reads as nonsense; PATH service codes are not bullets a
+  // subway rider recognizes. Subway bullets stay, PATH collapses to one word.
+  assert.strictEqual(displayName(getStation('132')), '14 St (123FML · PATH)');
+  assert.strictEqual(displayName(getStation('26733')), 'Newark · PATH');   // pure PATH: unchanged
 });
 
 test('a co-located PATH platform merges into the subway entry', () => {

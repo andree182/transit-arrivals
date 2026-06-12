@@ -114,7 +114,8 @@ Pebble.addEventListener('showConfiguration', function () {
   var db = stations._db.map(function (s) {
     // alt: member platform names of a merged complex ("6 Av" inside "14 St"),
     // searchable and shown on the result row; omitted when absent.
-    return { id: s.id, name: s.name, lines: s.lines, agency: s.agency, alt: s.alt };
+    // sys: lets the page label pure-PATH stations "· PATH", same as the watch.
+    return { id: s.id, name: s.name, lines: s.lines, agency: s.agency, alt: s.alt, sys: s.sys };
   });
   var html = config.buildConfigHtml(m.nearestPos, backfillAgency(m.favs), db, loadClock());
   Pebble.openURL('data:text/html,' + encodeURIComponent(html));

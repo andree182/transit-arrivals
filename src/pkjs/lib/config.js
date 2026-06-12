@@ -1,3 +1,5 @@
+var lineSummary = require('./stations').lineSummary;
+
 // JSON.stringify does not escape "</script>" or "<!--", so a free-text label
 // could break out of the <script type="application/json"> island. Neutralize
 // both sequences before embedding.
@@ -15,15 +17,18 @@ function normTokens(s) {
   var MAP = { avenue: 'av', ave: 'av', street: 'st', square: 'sq', road: 'rd',
               boulevard: 'blvd', parkway: 'pkwy', place: 'pl', plaza: 'plz',
               heights: 'hts', center: 'ctr', centre: 'ctr', fort: 'ft',
-              terrace: 'ter', junction: 'jct' };
-  var words = String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ');
+              terrace: 'ter', junction: 'jct',
+              first: '1', second: '2', third: '3', fourth: '4', fifth: '5',
+              sixth: '6', seventh: '7', eighth: '8', ninth: '9', tenth: '10' };
+  var words = String(s).toLowerCase()
+    .replace(/(\d+)(st|nd|rd|th)\b/g, '$1')    // ordinals first: 14th -> 14 (before the
+    .replace(/(\d)([a-z])/g, '$1 $2')          // glued split would leave a stray "th")
+    .replace(/([a-z])(\d)/g, '$1 $2')          // glued: 6av -> 6 av, av6 -> av 6
+    .replace(/[^a-z0-9]+/g, ' ').split(' ');
   var out = [];
   for (var i = 0; i < words.length; i++) {
     var w = words[i];
-    if (!w) continue;
-    var m = w.match(/^(\d+)(st|nd|rd|th)$/);
-    if (m) w = m[1];
-    out.push(MAP[w] || w);
+    if (w) out.push(MAP[w] || w);
   }
   return out;
 }
@@ -108,7 +113,10 @@ function buildConfigHtml(nearestPos, favs, stationDB, clock) {
 'var MAX=10;' +
 'var state=JSON.parse(document.getElementById("init-state").textContent);' +
 'var DB=JSON.parse(document.getElementById("station-db").textContent);' +
-'function disp(s){return s.name+(s.lines&&s.lines.length?" ("+s.lines.join("")+")":"");}' +
+lineSummary.toString() + ';' +
+// Mirrors stations.displayName so the stored favorite name and the watch's
+// station footer read identically.
+'function disp(s){if(s.sys==="path")return s.name+" \\u00b7 PATH";var ls=lineSummary(s.lines);return s.name+(ls?" ("+ls+")":"");}' +
 normTokens.toString() + ';' +
 stationMatches.toString() + ';' +
 stationRank.toString() + ';' +

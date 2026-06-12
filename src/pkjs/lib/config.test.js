@@ -124,6 +124,15 @@ test('search matches member platform alt names ("6th ave" finds the 14 St comple
   assert.ok(!matches('6 av', '14 St', ['A', 'C', 'E'], ['8 Av']), 'wrong avenue still misses');
 });
 
+test('search splits glued tokens and reads number words ("6av", "sixth ave")', () => {
+  const SIXTH = ['1', '2', '3', 'F', 'M', 'L'];
+  assert.ok(matches('6av', '14 St', SIXTH, ['6 Av']));
+  assert.ok(matches('6ave', '14 St', SIXTH, ['6 Av']));
+  assert.ok(matches('sixth ave', '14 St', SIXTH, ['6 Av']));
+  assert.ok(matches('14st', '14 St', SIXTH, []));
+  assert.ok(matches('fml123', '14 St', SIXTH, []), 'bullet-set query survives the split');
+});
+
 test('search is plain-substring tolerant and rejects empty queries', () => {
   assert.ok(matches('dekalb', 'DeKalb Av', []));
   assert.ok(!matches('', 'DeKalb Av', []));
@@ -162,7 +171,7 @@ test('page behavior: searching "fml123" finds the 6 Av complex; tapping adds it 
     };
   }
   const db = [
-    { id: '132', name: '14 St', lines: ['1', '2', '3', 'F', 'M', 'L'], agency: 'mta', alt: ['6 Av'] },
+    { id: '132', name: '14 St', lines: ['1', '2', '3', 'F', 'M', 'L', 'JS', 'H3'], agency: 'mta', alt: ['6 Av'] },
     { id: 'A31', name: '14 St', lines: ['A', 'C', 'E', 'L'], agency: 'mta', alt: ['8 Av'] },
   ];
   const html = buildConfigHtml(0, [], db, 0);
@@ -185,6 +194,8 @@ test('page behavior: searching "fml123" finds the 6 Av complex; tapping adds it 
   const rows = ids.results.children;
   assert.strictEqual(rows.length, 1, 'bullet query matches only the 6 Av complex');
   assert.ok(typeof rows[0].onclick === 'function');
+  assert.ok(rows[0].children.some((c) => c.textContent === '14 St (123FML · PATH)'),
+    'row label folds PATH bullets into one tag');
 
   rows[0].onclick();
   assert.match(ids.cap.textContent, /1\/10/, 'favorite stored');
