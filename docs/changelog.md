@@ -1,5 +1,11 @@
 # Transit Arrivals — Changelog
 
+## 1.11
+
+- **Three more systems.** Miami Metrorail, Baltimore Metro SubwayLink, and LA Metro Rail (the A, B, C, D, E, and K lines) are now live.
+- **The time, while you wait.** Leave the board open and the current time now shows at the bottom, so you can watch the clock and your train at once. It sits on its own line under short station names, tucks in beside long ones, and lands in the bottom curve on round watches.
+- **12 or 24 hour.** A new Clock setting (Auto, 12-hour, 24-hour) in the settings menu. Auto follows your watch's own time format.
+
 ## 1.10
 
 **The reliability release.** No new cities this time — instead, a top-to-bottom hardening pass across all ten systems, with every fix verified live, station by station.
