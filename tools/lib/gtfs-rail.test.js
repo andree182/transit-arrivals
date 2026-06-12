@@ -112,3 +112,24 @@ test('excludeNameRe drops non-passenger yard/depot entries and their stopIds', (
   assert.deepStrictEqual(stations.map(s => s.id), ['st1']);
   assert.strictEqual(data.stations.yd1, undefined);
 });
+
+test('mergeByProximity fuses differently-named co-located stations, keeps the descriptive name', () => {
+  const { mergeByProximity } = require('./gtfs-rail.js');
+  const stations = [
+    { id: 'A', name: 'Bayfront Park Metromover Station', lat: 25.7731, lon: -80.1873, lines: ['MM'] },
+    { id: 'B', name: 'Biscayne Bd@E Flagler St',          lat: 25.7731, lon: -80.1873, lines: ['MM'] },
+    { id: 'C', name: 'Government Center Metromover Station', lat: 25.7759, lon: -80.1961, lines: ['MM'] },
+    { id: 'D', name: 'Government Ctr.',                    lat: 25.7760, lon: -80.1961, lines: ['MR'] },
+    { id: 'E', name: 'Riverwalk Metromover Station',       lat: 25.7693, lon: -80.1900, lines: ['MM'] },  // ~150m away, stays separate
+  ];
+  const stops = { A: ['a1', 'a2'], B: ['b1'], C: ['c1'], D: ['d1', 'd2'], E: ['e1'] };
+  const out = mergeByProximity(stations, stops, 60);
+  const ids = out.map(s => s.id).sort();
+  assert.deepStrictEqual(ids, ['A', 'C', 'E']);              // B->A, D->C; E untouched
+  const a = out.find(s => s.id === 'A');
+  assert.deepStrictEqual(stops.A, ['a1', 'a2', 'b1']);        // unioned platforms
+  const c = out.find(s => s.id === 'C');
+  assert.strictEqual(c.name, 'Government Center Metromover Station');  // longest name wins over "Government Ctr."
+  assert.deepStrictEqual(c.lines, ['MM', 'MR']);             // interchange carries both systems
+  assert.strictEqual(stops.D, undefined);
+});

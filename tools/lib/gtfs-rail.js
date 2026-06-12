@@ -52,6 +52,44 @@ function mergeByName(stations, stationStops, distM) {
   return stations.filter(s => !removed.has(s.id));
 }
 
+// Merge any two stations within distM of each other into one — regardless of name —
+// for co-located platforms that mergeByName misses because their names differ: a
+// street-address alias ("Biscayne Bd@E Flagler St" == Bayfront Park), an
+// abbreviation ("Government Ctr." == Government Center Metromover), a punctuation
+// variant ("College / Bayside" == "College Bayside"), or a per-line interchange
+// suffix ("Expo / Crenshaw E-Line" == "...K-Line"). The surviving row keeps the
+// most descriptive name (longest; tie -> more platforms -> alphabetical), unions
+// stopIds + lines, and averages coords. Mutates stationStops; returns the filtered
+// list. distM must stay tight enough not to fuse genuinely-distinct adjacent
+// stations (e.g. downtown Metromover stops sit ~150 m apart).
+function preferKeep(a, b, stationStops) {
+  if (a.name.length !== b.name.length) return a.name.length > b.name.length;
+  const na = (stationStops[a.id] || []).length, nb = (stationStops[b.id] || []).length;
+  if (na !== nb) return na > nb;
+  return a.name <= b.name;
+}
+function mergeByProximity(stations, stationStops, distM) {
+  const removed = new Set();
+  for (let i = 0; i < stations.length; i++) {
+    const a = stations[i];
+    if (removed.has(a.id)) continue;
+    for (let j = i + 1; j < stations.length; j++) {
+      const b = stations[j];
+      if (removed.has(b.id)) continue;
+      if (haversineM(a.lat, a.lon, b.lat, b.lon) > distM) continue;
+      const keep = preferKeep(a, b, stationStops) ? a : b;
+      const drop = keep === a ? b : a;
+      stationStops[keep.id] = [...new Set((stationStops[keep.id] || []).concat(stationStops[drop.id] || []))].sort();
+      keep.lines = [...new Set(keep.lines.concat(drop.lines))].sort();
+      keep.lat = (keep.lat + drop.lat) / 2; keep.lon = (keep.lon + drop.lon) / 2;
+      delete stationStops[drop.id];
+      removed.add(drop.id);
+      if (drop === a) break;           // outer row was merged away; advance i
+    }
+  }
+  return stations.filter(s => !removed.has(s.id));
+}
+
 // gtfs: { stops, routes, trips, stopTimes } parsed rows.
 // cfg:  { id, agency, railTypes:Set<number>, labelFor(route)->label|null,
 //         colorFor?(route,label)->[r,g,b] }  (colorFor optional; defaults to route_color)
@@ -134,7 +172,11 @@ function buildRailArtifacts(gtfs, cfg) {
       return true;
     });
   }
+  // Optional: collapse co-located platforms whose names differ (street-address
+  // aliases, abbreviations, per-line interchange suffixes). Runs after titleCase so
+  // the surviving "longest name" comparison uses final display names.
+  if (cfg.mergeByProximityMeters) stations = mergeByProximity(stations, stationStops, cfg.mergeByProximityMeters);
   return { stations, data: { stations: stationStops, names, routes: routesOut } };
 }
 
-module.exports = { buildRailArtifacts, hexToRgb, titleCase };
+module.exports = { buildRailArtifacts, hexToRgb, titleCase, mergeByProximity };

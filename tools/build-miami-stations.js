@@ -33,6 +33,11 @@ function main() {
     colorFor: (r, label) => label === 'MM' ? [120, 120, 120] : [255, 128, 64],
     // Merge same-named co-located directional platforms (Metrorail N/S + Metromover inner/outer).
     mergeByNameMeters: 100,
+    // Then fuse co-located platforms whose names differ: street-address aliases,
+    // abbreviations, and Metromover<->Metrorail interchanges (Government Center, MIA
+    // Airport). 60 m keeps the genuinely-distinct downtown Metromover stops (~150 m
+    // apart) separate.
+    mergeByProximityMeters: 60,
     titleCase: true
   });
   fs.writeFileSync(path.join(__dirname, '../src/pkjs/lib/miami.stations.json'), JSON.stringify(stations));
