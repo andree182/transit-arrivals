@@ -4,7 +4,7 @@
 
 - **Three more systems.** Miami Metrorail, Baltimore Metro SubwayLink, and LA Metro Rail (the A, B, C, D, E, and K lines) are now live.
 - **The time, while you wait.** Leave the board open and the current time now shows at the bottom, so you can watch the clock and your train at once. It sits on its own line under short station names, tucks in beside long ones, and lands in the bottom curve on round watches. When a train hits the platform, the time sweeps gold with the rest of the board.
-- **12 or 24 hour.** A new Clock setting (Auto, 12-hour, 24-hour) in the settings menu. Auto follows your watch's own time format.
+- **12 or 24 hour.** A new Clock setting (Auto, 12-hour, 24-hour), in both the watch's settings menu and the phone app's settings page, kept in sync. Auto follows your watch's own time format.
 - **Transfer points, on one board.** Where two lines share a station, you now get a single stop instead of two pins on top of each other: Miami's Government Center carries Metromover and Metrorail together, and LA's Expo/Crenshaw shows the E and K lines side by side.
 
 ## 1.10
