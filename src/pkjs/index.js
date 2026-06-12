@@ -12,6 +12,16 @@ function loadMirror() {
 function saveMirror(obj) {
   try { localStorage.setItem('mta_favs', JSON.stringify(obj)); } catch (e) {}
 }
+// Clock mode (0 Auto, 1 12h, 2 24h) mirrors the watch's setting so the config page
+// opens on the current value. The watch is the source of truth: it pushes its mode
+// on connect and on any watch-side change; the config page can push a new value back.
+function loadClock() {
+  var v = parseInt(localStorage.getItem('mta_clock'), 10);
+  return (v === 1 || v === 2) ? v : 0;
+}
+function saveClock(v) {
+  try { localStorage.setItem('mta_clock', String(v)); } catch (e) {}
+}
 
 // `token` (the watch's per-request id, echoed back) lets the watch drop stale
 // responses from a station it has since navigated away from. Omitted when there
@@ -79,6 +89,10 @@ Pebble.addEventListener('appmessage', function (e) {
     saveMirror(favsync.decodeFavList(e.payload.FavSync));
     return;
   }
+  if (e.payload && e.payload.Clock != null) {   // watch pushed its clock mode
+    saveClock(e.payload.Clock);
+    return;
+  }
   handleRequest(e.payload);
 });
 
@@ -100,7 +114,7 @@ Pebble.addEventListener('showConfiguration', function () {
   var db = stations._db.map(function (s) {
     return { id: s.id, name: s.name, lines: s.lines, agency: s.agency };
   });
-  var html = config.buildConfigHtml(m.nearestPos, backfillAgency(m.favs), db);
+  var html = config.buildConfigHtml(m.nearestPos, backfillAgency(m.favs), db, loadClock());
   Pebble.openURL('data:text/html,' + encodeURIComponent(html));
 });
 
@@ -108,7 +122,19 @@ Pebble.addEventListener('webviewclosed', function (e) {
   if (!e || !e.response) return;
   var payload;
   try { payload = JSON.parse(decodeURIComponent(e.response)); } catch (err) { return; }
-  if (!payload || !payload.favs) return;
-  var bytes = favsync.encodeFavList(payload.nearestPos, payload.favs);
-  Pebble.sendAppMessage({ FavSet: Array.prototype.slice.call(bytes) });
+  if (!payload) return;
+  // The outbox is single-slot: a second send before the first is acked returns BUSY
+  // and is dropped. So send Clock first, then FavSet only after Clock is acked.
+  function sendFavSet() {
+    if (!payload.favs) return;
+    var bytes = favsync.encodeFavList(payload.nearestPos, payload.favs);
+    Pebble.sendAppMessage({ FavSet: Array.prototype.slice.call(bytes) });
+  }
+  if (payload.clock != null) {
+    var cv = payload.clock | 0;
+    saveClock(cv);
+    Pebble.sendAppMessage({ Clock: cv }, sendFavSet, sendFavSet);
+  } else {
+    sendFavSet();
+  }
 });

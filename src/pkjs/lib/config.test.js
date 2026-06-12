@@ -69,6 +69,22 @@ test('renders city filter chips derived from the DB', () => {
   assert.match(html, /\.cb\{/);   // badge CSS present
 });
 
+test('embeds the clock mode and renders the Auto/12h/24h control', () => {
+  const html = buildConfigHtml(0, [], DB, 2);
+  const state = extractJson(html, 'init-state');
+  assert.strictEqual(state.clock, 2);                 // current mode round-trips
+  assert.match(html, /id="clock"/);
+  assert.match(html, /data-clk="0"[^>]*>Auto/);
+  assert.match(html, /data-clk="1"[^>]*>12-hour/);
+  assert.match(html, /data-clk="2"[^>]*>24-hour/);
+  assert.match(html, /clock:selClock/);               // save payload carries the choice
+});
+
+test('clock defaults to 0 (Auto) when omitted', () => {
+  const html = buildConfigHtml(0, [], DB);
+  assert.strictEqual(extractJson(html, 'init-state').clock, 0);
+});
+
 test('produces a complete HTML document', () => {
   const html = buildConfigHtml(255, [], DB);
   assert.match(html, /^<!DOCTYPE html>/);

@@ -5,8 +5,8 @@ function safeJson(obj) {
   return JSON.stringify(obj).replace(/<\//g, '<\\/').replace(/<!--/g, '<\\u0021--');
 }
 
-function buildConfigHtml(nearestPos, favs, stationDB) {
-  var initState = safeJson({ nearestPos: nearestPos, favs: favs });
+function buildConfigHtml(nearestPos, favs, stationDB, clock) {
+  var initState = safeJson({ nearestPos: nearestPos, favs: favs, clock: clock | 0 });
   var db = safeJson(stationDB);
   return '<!DOCTYPE html>\n' +
 '<html><head><meta charset="utf-8">' +
@@ -27,10 +27,16 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 '.cb{display:inline-block;min-width:30px;text-align:center;font-size:10px;font-weight:700;color:#fff;border-radius:5px;padding:2px 5px;margin-right:6px;vertical-align:middle}' +
 '.chip{background:#2c2c2e;border:0;color:#bbb;border-radius:14px;padding:5px 10px;margin:0 4px 6px 0;font-size:12px}.chip.on{background:#0a84ff;color:#fff}' +
 '#chips{padding:8px 16px 0}' +
+'.seg{display:flex;gap:0;border-radius:8px;overflow:hidden;background:#2c2c2e}' +
+'.seg button{flex:1;background:transparent;border:0;color:#bbb;padding:10px;font-size:14px}' +
+'.seg button.on{background:#0a84ff;color:#fff;font-weight:600}' +
 '</style></head><body>' +
 '<header>Transit Favorites</header>' +
 '<section><h2>Your stations</h2><div id="favs"></div>' +
 '<div class="hint" id="cap"></div></section>' +
+'<section><h2>Clock</h2><div class="seg" id="clock">' +
+'<button data-clk="0">Auto</button><button data-clk="1">12-hour</button><button data-clk="2">24-hour</button>' +
+'</div><div class="hint">Shows the current time on the arrivals board. Auto follows your watch.</div></section>' +
 '<div id="chips"></div>' +
 '<section><h2>Add a station</h2>' +
 '<input id="search" placeholder="Search stations…" autocomplete="off">' +
@@ -98,11 +104,14 @@ function buildConfigHtml(nearestPos, favs, stationDB) {
 'document.getElementById("search").value="";search("");renderFavs();' +
 '}' +
 'document.getElementById("search").addEventListener("input",function(e){search(e.target.value);});' +
+// Clock segmented control: highlight the active mode, update state on tap.
+'var selClock=(state.clock|0);' +
+'function renderClock(){var seg=document.getElementById("clock");var bs=seg.getElementsByTagName("button");for(var i=0;i<bs.length;i++){var on=(parseInt(bs[i].getAttribute("data-clk"),10)===selClock);bs[i].className=on?"on":"";bs[i].onclick=(function(v){return function(){selClock=v;renderClock();};})(parseInt(bs[i].getAttribute("data-clk"),10));}}' +
 'document.getElementById("save").addEventListener("click",function(){' +
-'var data=encodeURIComponent(JSON.stringify({nearestPos:state.nearestPos,favs:state.favs}));' +
+'var data=encodeURIComponent(JSON.stringify({nearestPos:state.nearestPos,favs:state.favs,clock:selClock}));' +
 'var r=getReturn();location=r+(r.indexOf("#")>=0?"":"#")+data;' +
 '});' +
-'renderChips();renderFavs();' +
+'renderChips();renderFavs();renderClock();' +
 '})();</script></body></html>';
 }
 

@@ -201,6 +201,7 @@ static SettingsRow settings_row(uint16_t r) {
 static bool s_tx_busy = false;
 static bool s_tx_refresh = false;
 static bool s_tx_favsync = false;
+static bool s_tx_clock = false;   // push the watch's clock mode to the phone (config mirror)
 // Per-request token, echoed by the phone so we can drop a stale reply that lands
 // after we've already navigated to a different station (the empty no-key agencies
 // reply fast and would otherwise clobber a slower bundle). A decimal STRING, to
@@ -239,6 +240,12 @@ static void tx_pump(void) {
     if (app_message_outbox_begin(&out) != APP_MSG_OK) return;
     dict_write_data(out, MESSAGE_KEY_FavSync, buf, n);
     if (app_message_outbox_send() == APP_MSG_OK) { s_tx_favsync = false; s_tx_busy = true; }
+    return;
+  }
+  if (s_tx_clock) {
+    if (app_message_outbox_begin(&out) != APP_MSG_OK) return;
+    dict_write_uint8(out, MESSAGE_KEY_Clock, s_clock_mode);
+    if (app_message_outbox_send() == APP_MSG_OK) { s_tx_clock = false; s_tx_busy = true; }
     return;
   }
 }
@@ -348,6 +355,7 @@ static void menu_select(MenuLayer *m, MenuIndex *idx, void *c) {
       s_clock_mode = (s_clock_mode + 1) % 3;     // Auto -> 12h -> 24h -> Auto
       hero_set_clock_mode((ClockMode)s_clock_mode);
       persist_write_int(PERSIST_CLOCK, s_clock_mode);
+      s_tx_clock = true; tx_pump();              // keep the phone config mirror in sync
       menu_layer_reload_data(m);
       break;
   }
@@ -973,7 +981,18 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
     return;
   }
   Tuple *favreq = dict_find(iter, MESSAGE_KEY_FavReq);
-  if (favreq) { push_favsync(); return; }
+  if (favreq) { push_favsync(); s_tx_clock = true; tx_pump(); return; }   // also seed the phone's clock mirror
+  Tuple *clk = dict_find(iter, MESSAGE_KEY_Clock);
+  if (clk) {                                   // phone config set the clock mode
+    uint8_t m = clk->value->uint8;
+    if (m <= CLOCK_24H) {
+      s_clock_mode = m;
+      hero_set_clock_mode((ClockMode)s_clock_mode);
+      persist_write_int(PERSIST_CLOCK, s_clock_mode);
+      render_dispatch();
+    }
+    return;
+  }
   Tuple *favset = dict_find(iter, MESSAGE_KEY_FavSet);
   if (favset) {
     static Fav items[FAV_MAX];

@@ -38,7 +38,8 @@
       "FavReq",
       "Alerts",
       "Agency",
-      "Req"
+      "Req",
+      "Clock"
     ],
     "resources": {
       "media": [
