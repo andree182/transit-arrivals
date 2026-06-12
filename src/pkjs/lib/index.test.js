@@ -71,7 +71,7 @@ test('a geolocation failure answers error 1', () => {
 test('a fix outside the covered systems answers error 2, not a Times Sq board', () => {
   const env = mockEnv();
   global.navigator.geolocation.getCurrentPosition = function (ok) {
-    ok({ coords: { latitude: 34.0522, longitude: -118.2437 } });   // Los Angeles
+    ok({ coords: { latitude: 39.7392, longitude: -104.9903 } });   // Denver (uncovered)
   };
   env.listeners.appmessage({ payload: { UseNearest: 1, Req: '9' } });
   assert.deepStrictEqual(env.sent[0], { ErrorCode: 2, Req: '9' });

@@ -40,9 +40,8 @@ test('nearestStation can return a standalone PATH station when closest', () => {
 });
 
 test('nearestStation returns null far outside the service area (honest, no fake NYC board)', () => {
-  // A rider in LA or London must get the "no covered station" card, not a live
-  // Times Sq board with zero explanation.
-  assert.strictEqual(nearestStation(34.0522, -118.2437), null);   // Los Angeles
+  // A rider in an uncovered city must get the "no covered station" card, not a live
+  // Times Sq board with zero explanation. (LA is now covered by LA Metro Rail.)
   assert.strictEqual(nearestStation(51.5074, -0.1278), null);     // London
   assert.strictEqual(nearestStation(39.7392, -104.9903), null);   // Denver
 });
@@ -204,4 +203,12 @@ test('miami and baltimore are live (present in the search DB)', () => {
   assert.ok(agencies.has('miami'), 'miami should be live');
   assert.ok(agencies.has('baltimore'), 'baltimore should be live');
   assert.ok(!agencies.has('skyline'), 'skyline stays hidden (no key)');
+});
+
+test('lametro is registered and live in the search DB', () => {
+  const agencies = new Set(stations._db.map((s) => s.agency));
+  assert.ok(agencies.has('lametro'), 'lametro should be live');
+  // Downtown LA (near Union Station) resolves to an LA Metro station.
+  const la = nearestStation(34.0560, -118.2340);
+  assert.ok(la && la.agency === 'lametro', 'downtown LA resolves to a lametro station');
 });
