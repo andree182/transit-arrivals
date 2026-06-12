@@ -11,25 +11,19 @@ const { buildRailArtifacts } = require('./lib/gtfs-rail.js');
 function labelFor(route) {
   const combined = String(route.route_long_name || '') + ' ' + String(route.route_short_name || '');
   if (/subway|metro/i.test(combined)) return 'M';
-  if (/light\s*rail/i.test(combined)) return 'LR';
-  return null;
-}
-
-function mergeGtfs(a, b) {
-  return {
-    stops: a.stops.concat(b.stops), routes: a.routes.concat(b.routes),
-    trips: a.trips.concat(b.trips), stopTimes: a.stopTimes.concat(b.stopTimes)
-  };
+  return null;   // Light RailLink is a separate Swiftly entity (no key) — excluded
 }
 
 function main() {
+  // Metro SubwayLink only. Light RailLink is a separate Swiftly entity our key does
+  // not cover, so its boards would be permanently empty; re-merge an LR feed here
+  // (readDir(LR_DIR) -> concat) if MDOT ever grants a Light Rail key.
   const metroDir = process.env.METRO_DIR || '/tmp/balt-metro';
-  const lrDir = process.env.LR_DIR || '/tmp/balt-lr';
-  const gtfs = mergeGtfs(readDir(metroDir), readDir(lrDir));
+  const gtfs = readDir(metroDir);
   const { stations, data } = buildRailArtifacts(gtfs, {
     id: 'baltimore', agency: 'baltimore', railTypes: new Set([0, 1, 2]),
     labelFor,
-    colorFor: (r, label) => label === 'M' ? [0, 128, 0] : [0, 116, 153],   // Metro green (#008000), Light Rail teal (#007499)
+    colorFor: () => [0, 128, 0],   // Metro green (#008000)
     titleCase: true,    // Metro names are ALL-CAPS in GTFS
     excludeNameRe: /\b(division|yard|depot|shop|garage)\b/i   // drop non-passenger yard/division stops
   });
