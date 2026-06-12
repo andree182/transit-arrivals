@@ -150,14 +150,13 @@ test('nearest station to downtown Cleveland is a GCRTA stop', () => {
 test('not-yet-live agencies are hidden from the station DB', () => {
   const present = {};
   stations._db.forEach(function (s) { present[s.agency] = true; });
-  assert.ok(!present.miami, 'miami should be hidden');
-  assert.ok(!present.baltimore, 'baltimore should be hidden');
-  assert.ok(!present.skyline, 'skyline should be hidden');
+  assert.ok(!present.skyline, 'skyline should be hidden (no Swiftly key)');
   // Live agencies stay searchable.
   assert.ok(present.gcrta && present.patco && present.trenurbano);
-  // A point in downtown Miami must not resolve to a (hidden) miami station —
-  // with miami hidden there is no covered station within range, so null.
-  assert.strictEqual(nearestStation(25.7759, -80.1961), null);
+  assert.ok(present.miami && present.baltimore, 'miami + baltimore are now live');
+  // A point in downtown Miami now resolves to a live miami station.
+  const miamiHit = nearestStation(25.7759, -80.1961);
+  assert.ok(miamiHit && miamiHit.agency === 'miami', 'downtown Miami resolves to a miami station');
 });
 
 test('a favorite id truncated by the old caps still resolves by unique prefix', () => {
@@ -198,4 +197,11 @@ test('multi-point complex is nearest from each entrance, not a fat circle', () =
   // Both ends resolve to the same complex, which carries all its lines.
   assert.ok(nearestStation(40.73735, -73.99684).lines.indexOf('F') >= 0);
   assert.ok(nearestStation(40.73735, -73.99684).lines.indexOf('L') >= 0);
+});
+
+test('miami and baltimore are live (present in the search DB)', () => {
+  const agencies = new Set(stations._db.map((s) => s.agency));
+  assert.ok(agencies.has('miami'), 'miami should be live');
+  assert.ok(agencies.has('baltimore'), 'baltimore should be live');
+  assert.ok(!agencies.has('skyline'), 'skyline stays hidden (no key)');
 });
