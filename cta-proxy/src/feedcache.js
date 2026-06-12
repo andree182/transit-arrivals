@@ -33,3 +33,26 @@ export class FeedCacheCore {
     }
   }
 }
+
+// Durable Object wrapper: a single global instance per feed URL. State lives in
+// instance memory (re-fetch on eviction is harmless). The class is registered in
+// wrangler.toml as a SQLite-backed namespace (free-plan compatible) and re-exported
+// from index.js so the runtime can find it.
+export class FeedCache {
+  constructor(state, env) {
+    this.core = new FeedCacheCore((u, init) => fetch(u, init), () => Date.now());
+  }
+  async fetch(request) {
+    let url, key, ttl;
+    try { ({ url, key, ttl } = await request.json()); }
+    catch (e) { return new Response('bad request', { status: 400 }); }
+    try {
+      const { bytes, stale } = await this.core.get(url, key, ttl);
+      if (stale) console.log(JSON.stringify({ msg: 'feedcache stale', url }));
+      return new Response(bytes, { headers: { 'x-feedcache': stale ? 'stale' : 'fresh' } });
+    } catch (e) {
+      console.log(JSON.stringify({ msg: 'feedcache miss', url, err: String(e) }));
+      return new Response('upstream error', { status: 502 });
+    }
+  }
+}

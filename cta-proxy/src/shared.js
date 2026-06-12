@@ -27,3 +27,15 @@ export async function fetchBuf(url, init) {
   if (!r.ok) throw new Error('upstream ' + r.status);
   return new Uint8Array(await r.arrayBuffer());
 }
+// Fetch a Swiftly feed through its global FeedCache Durable Object. One DO instance
+// per feed URL (idFromName) caches + coalesces upstream requests so the shared
+// Swiftly key's rate limit is bounded regardless of how many stations/colos are hot.
+export async function fetchSwiftlyFeed(env, url, key, ttl) {
+  const stub = env.FEED_CACHE.get(env.FEED_CACHE.idFromName(url));
+  const r = await stub.fetch('https://feedcache/', {
+    method: 'POST',
+    body: JSON.stringify({ url, key, ttl })
+  });
+  if (!r.ok) throw new Error('feedcache ' + r.status);
+  return new Uint8Array(await r.arrayBuffer());
+}
