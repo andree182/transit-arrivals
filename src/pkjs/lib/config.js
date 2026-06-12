@@ -70,8 +70,8 @@ function stationRank(q, name, alt) {
   return 0;
 }
 
-function buildConfigHtml(nearestPos, favs, stationDB, clock) {
-  var initState = safeJson({ nearestPos: nearestPos, favs: favs, clock: clock | 0 });
+function buildConfigHtml(nearestPos, favs, stationDB, clock, apiKey) {
+  var initState = safeJson({ nearestPos: nearestPos, favs: favs, clock: clock | 0, apiKey: apiKey || '' });
   var db = safeJson(stationDB);
   return '<!DOCTYPE html>\n' +
 '<html><head><meta charset="utf-8">' +
@@ -102,6 +102,8 @@ function buildConfigHtml(nearestPos, favs, stationDB, clock) {
 '<section><h2>Clock</h2><div class="seg" id="clock">' +
 '<button data-clk="0">Auto</button><button data-clk="1">12-hour</button><button data-clk="2">24-hour</button>' +
 '</div><div class="hint">Shows the current time on the arrivals board. Auto follows your watch.</div></section>' +
+'<section><h2>Golemio API Key</h2><input id="apiKey" value="" style="width:100%;box-sizing:border-box;background:#2c2c2e;border:0;border-radius:6px;color:#fff;padding:10px;font-size:14px" placeholder="Optional API key for PID agency">' +
+'<div class="hint">Data provided by Golemio API under CC-BY license.</div></section>' +
 '<div id="chips"></div>' +
 '<section><h2>Add a station</h2>' +
 '<input id="search" placeholder="Search stations…" autocomplete="off">' +
@@ -122,7 +124,7 @@ stationMatches.toString() + ';' +
 stationRank.toString() + ';' +
 // One distinct, city-iconic color per agency (used for the row badge AND the
 // filter chip). Kept visually separable so every city reads uniquely.
-'var AGENCY_META={mta:{city:"NYC",c:"#0039A6"},cta:{city:"CHI",c:"#2A8FD4"},wmata:{city:"DC",c:"#C8102E"},marta:{city:"ATL",c:"#F2A900"},bart:{city:"SF",c:"#ED7B26"},mbta:{city:"BOS",c:"#00843D"},septa:{city:"PHL",c:"#7C3AED"},gcrta:{city:"CLE",c:"#008C95"},miami:{city:"MIA",c:"#EC008C"},baltimore:{city:"BAL",c:"#8DC63F"},skyline:{city:"HNL",c:"#FF6F61"},patco:{city:"PAT",c:"#BC0035"},trenurbano:{city:"SJU",c:"#C03230"},lametro:{city:"LA",c:"#0072BC"}};' +
+'var AGENCY_META={mta:{city:"NYC",c:"#0039A6"},cta:{city:"CHI",c:"#2A8FD4"},wmata:{city:"DC",c:"#C8102E"},marta:{city:"ATL",c:"#F2A900"},bart:{city:"SF",c:"#ED7B26"},mbta:{city:"BOS",c:"#00843D"},septa:{city:"PHL",c:"#7C3AED"},gcrta:{city:"CLE",c:"#008C95"},miami:{city:"MIA",c:"#EC008C"},baltimore:{city:"BAL",c:"#8DC63F"},skyline:{city:"HNL",c:"#FF6F61"},patco:{city:"PAT",c:"#BC0035"},trenurbano:{city:"SJU",c:"#C03230"},lametro:{city:"LA",c:"#0072BC"},pid:{city:"Prague",c:"#D9222A"}};' +
 'function meta(s){return AGENCY_META[s&&s.agency]||{city:"",c:"#666"};}' +
 'function colorForCity(city){for(var k in AGENCY_META)if(AGENCY_META[k].city===city)return AGENCY_META[k].c;return "#0a84ff";}' +
 // Dark vs light text by perceived luminance, so gold/sky chips stay legible.
@@ -148,7 +150,9 @@ stationRank.toString() + ';' +
 'var nameSpan=document.createElement("span");nameSpan.textContent=f.name;nm.appendChild(nameSpan);' +
 'var inp=document.createElement("input");inp.placeholder="Label (optional)";inp.value=f.label||"";' +
 'inp.oninput=function(){state.favs[i].label=inp.value;};' +
-'metaDiv.appendChild(nm);metaDiv.appendChild(inp);' +
+'var inpFilt=document.createElement("input");inpFilt.placeholder="Filter (e.g. 17, Modřany)";inpFilt.value=f.filterLines||"";' +
+'inpFilt.oninput=function(){state.favs[i].filterLines=inpFilt.value;};' +
+'metaDiv.appendChild(nm);metaDiv.appendChild(inp);metaDiv.appendChild(inpFilt);' +
 'var up=document.createElement("button");up.textContent="\\u2191";up.onclick=function(){move(i,-1);};' +
 'var dn=document.createElement("button");dn.textContent="\\u2193";dn.onclick=function(){move(i,1);};' +
 'var rm=document.createElement("button");rm.className="rm";rm.textContent="\\u2715";rm.onclick=function(){state.favs.splice(i,1);renderFavs();};' +
@@ -187,7 +191,7 @@ stationRank.toString() + ';' +
 'function add(st,li){' +
 'if(isFav(st))return;' +
 'if(state.favs.length>=MAX){li.style.color="#f88";li.lastChild.textContent=disp(st)+" \\u2014 favorites full (10)";return;}' +
-'state.favs.push({id:st.id,name:disp(st),label:"",agency:st.agency});' +
+'state.favs.push({id:st.id,name:disp(st),label:"",filterLines:"",agency:st.agency});' +
 'renderFavs();search(document.getElementById("search").value);' +
 '}' +
 'document.getElementById("search").addEventListener("input",function(e){search(e.target.value);});' +
@@ -195,9 +199,10 @@ stationRank.toString() + ';' +
 'var selClock=(state.clock|0);' +
 'function renderClock(){var seg=document.getElementById("clock");var bs=seg.getElementsByTagName("button");for(var i=0;i<bs.length;i++){var on=(parseInt(bs[i].getAttribute("data-clk"),10)===selClock);bs[i].className=on?"on":"";bs[i].onclick=(function(v){return function(){selClock=v;renderClock();};})(parseInt(bs[i].getAttribute("data-clk"),10));}}' +
 'document.getElementById("save").addEventListener("click",function(){' +
-'var data=encodeURIComponent(JSON.stringify({nearestPos:state.nearestPos,favs:state.favs,clock:selClock}));' +
+'var data=encodeURIComponent(JSON.stringify({nearestPos:state.nearestPos,favs:state.favs,clock:selClock,apiKey:document.getElementById("apiKey").value}));' +
 'var r=getReturn();location=r+(r.indexOf("#")>=0?"":"#")+data;' +
 '});' +
+'document.getElementById("apiKey").value = state.apiKey || "";' +
 'renderChips();renderFavs();renderClock();' +
 '})();</script></body></html>';
 }

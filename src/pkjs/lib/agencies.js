@@ -154,6 +154,102 @@ var MTA = {
   _directionWord: directionWord
 };
 
+var PID = {
+  id: 'pid', name: 'PID', transport: 'direct',
+  getArrivals: function(station, cb) {
+    var url = 'https://api.golemio.cz/v2/pid/departureboards?limit=15&names=' + encodeURIComponent(station.name);
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.setRequestHeader('X-Access-Token', station.apiKey || '');
+    
+    xhr.onload = function() {
+      if (xhr.status === 200 && xhr.responseText) {
+        try {
+          var data = JSON.parse(xhr.responseText);
+          var departures = data.departures || [];
+          var now = nowSecs();
+          
+          var linesMap = {};
+          var filters = station.filterLines ? station.filterLines.split(',').map(function(s){return s.trim().toLowerCase();}).filter(function(s){return s;}) : [];
+          
+          departures.forEach(function(dep) {
+            var line = dep.route.short_name;
+            var dest = dep.trip.headsign;
+            
+            if (filters.length > 0) {
+              var match = false;
+              for (var i=0; i<filters.length; i++) {
+                var f = filters[i];
+                if (line.toLowerCase() === f || (dest && dest.toLowerCase().indexOf(f) >= 0)) {
+                  match = true; break;
+                }
+              }
+              if (!match) return;
+            }
+            
+            var tsStr = dep.departure_timestamp.predicted || dep.departure_timestamp.scheduled || dep.arrival_timestamp.predicted || dep.arrival_timestamp.scheduled;
+            if (!tsStr) return;
+            var ts = Math.floor(new Date(tsStr).getTime() / 1000);
+            
+            if (!linesMap[line]) {
+              linesMap[line] = {
+                line: line,
+                color: linesLib.colorForLine(line, 'pid'),
+                directionsMap: {}
+              };
+            }
+            if (!linesMap[line].directionsMap[dest]) {
+              linesMap[line].directionsMap[dest] = {
+                dest: dest,
+                label: '',
+                times: [],
+                exp: []
+              };
+            }
+            linesMap[line].directionsMap[dest].times.push(ts);
+            linesMap[line].directionsMap[dest].exp.push(false);
+          });
+          
+          var model = [];
+          for (var l in linesMap) {
+            var dirs = [];
+            for (var d in linesMap[l].directionsMap) {
+              var dirObj = linesMap[l].directionsMap[d];
+              dirObj.times.sort(function(a, b) { return a - b; });
+              dirs.push(dirObj);
+            }
+            model.push({
+              line: l,
+              color: linesMap[l].color,
+              directions: dirs
+            });
+          }
+          
+          if (model.length === 0) {
+            model.push({ line: '-', directions: [], notice: 'No live arrivals right now' });
+          }
+          
+          cb(null, {
+            epoch: now,
+            station: { id: station.id, name: station.name, agency: 'pid' },
+            model: model,
+            alerts: [],
+            suspensions: []
+          });
+        } catch(e) {
+          cb(3);
+        }
+      } else {
+        cb(3);
+      }
+    };
+    xhr.onerror = function() { cb(3); };
+    xhr.timeout = 15000;
+    xhr.ontimeout = function() { cb(3); };
+    xhr.send();
+  }
+};
+
 var REGISTRY = {
   mta: MTA,
   cta: proxied.makeProxiedAgency({ id: 'cta', name: 'CTA' }),
@@ -169,6 +265,7 @@ var REGISTRY = {
   patco: proxied.makeProxiedAgency({ id: 'patco', name: 'PATCO' }),
   trenurbano: proxied.makeProxiedAgency({ id: 'trenurbano', name: 'Tren Urbano' }),
   lametro: proxied.makeProxiedAgency({ id: 'lametro', name: 'Metro' }),
+  pid: PID
 };
 function get(id) { return REGISTRY[id] || MTA; }   // default to MTA for legacy favorites
 

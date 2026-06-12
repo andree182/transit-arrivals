@@ -34,13 +34,13 @@ function putU32(arr, v) { arr.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, 
 
 function encodeBundle(stationId, stationName, lines, epochBase) {
   var b = [];
-  b.push(8);                       // version
+  b.push(9);                       // version
   putU32(b, epochBase);
   putStr(b, stationName, 39);
   putStr(b, stationId, 39);        // v8: fits the longest real id (SEPTA, 38 bytes)
   b.push(lines.length & 0xff);
   lines.forEach(function (ln) {
-    putStr(b, ln.line, 2);
+    putStr(b, ln.line, 4);
     var c = ln.color || [255, 255, 255]; b.push(c[0] & 0xff, c[1] & 0xff, c[2] & 0xff);
     var dirs = ln.directions || [];
     b.push(dirs.length & 0xff);

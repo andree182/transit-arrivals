@@ -12,6 +12,7 @@ var SKYLINE_DB = require('./skyline.stations.json');
 var PATCO_DB = require('./patco.stations.json');
 var TRENURBANO_DB = require('./trenurbano.stations.json');
 var LAMETRO_DB = require('./lametro.stations.json');
+var PID_DB = require('./prague.stations.json');
 
 function tag(list, agency) {
   return list.map(function (s) {
@@ -31,7 +32,7 @@ function tag(list, agency) {
 var NOT_YET_LIVE = { skyline: true };
 
 // Concatenation of every agency's on-phone directory, minus the not-yet-live ones.
-var DB = tag(MTA_DB, 'mta').concat(tag(CTA_DB, 'cta')).concat(tag(WMATA_DB, 'wmata')).concat(tag(MARTA_DB, 'marta')).concat(tag(BART_DB, 'bart')).concat(tag(MBTA_DB, 'mbta')).concat(tag(SEPTA_DB, 'septa')).concat(tag(GCRTA_DB, 'gcrta')).concat(tag(MIAMI_DB, 'miami')).concat(tag(BALT_DB, 'baltimore')).concat(tag(SKYLINE_DB, 'skyline')).concat(tag(PATCO_DB, 'patco')).concat(tag(TRENURBANO_DB, 'trenurbano')).concat(tag(LAMETRO_DB, 'lametro'))
+var DB = tag(MTA_DB, 'mta').concat(tag(CTA_DB, 'cta')).concat(tag(WMATA_DB, 'wmata')).concat(tag(MARTA_DB, 'marta')).concat(tag(BART_DB, 'bart')).concat(tag(MBTA_DB, 'mbta')).concat(tag(SEPTA_DB, 'septa')).concat(tag(GCRTA_DB, 'gcrta')).concat(tag(MIAMI_DB, 'miami')).concat(tag(BALT_DB, 'baltimore')).concat(tag(SKYLINE_DB, 'skyline')).concat(tag(PATCO_DB, 'patco')).concat(tag(TRENURBANO_DB, 'trenurbano')).concat(tag(LAMETRO_DB, 'lametro')).concat(tag(PID_DB, 'pid'))
   .filter(function (s) { return !NOT_YET_LIVE[s.agency]; });
 
 function haversine(aLat, aLon, bLat, bLon) {

@@ -6,8 +6,8 @@ var agencies = require('./lib/agencies');
 var alertsLib = require('./lib/alerts');
 
 function loadMirror() {
-  try { return JSON.parse(localStorage.getItem('mta_favs')) || { nearestPos: 0, favs: [] }; }
-  catch (e) { return { nearestPos: 0, favs: [] }; }
+  try { return JSON.parse(localStorage.getItem('mta_favs')) || { nearestPos: 0, favs: [], apiKey: '' }; }
+  catch (e) { return { nearestPos: 0, favs: [], apiKey: '' }; }
 }
 function saveMirror(obj) {
   try { localStorage.setItem('mta_favs', JSON.stringify(obj)); } catch (e) {}
@@ -67,7 +67,10 @@ function handleRequest(msg) {
     navigator.geolocation.getCurrentPosition(
       function (p) {
         var st = stations.nearestStation(p.coords.latitude, p.coords.longitude);
-        if (st) refreshFor(st, token); else sendError(2, token);
+        if (st) {
+          st.apiKey = loadMirror().apiKey;
+          refreshFor(st, token);
+        } else sendError(2, token);
       },
       function (e) { console.log('[mta] geo FAIL ' + (e && e.message)); sendError(1, token); },
       { timeout: 15000, maximumAge: 5000 }
@@ -76,7 +79,17 @@ function handleRequest(msg) {
     // Resolve by (agency, id) so colliding ids (MTA vs WMATA "A02") pick the right
     // system. msg.Agency is absent for legacy favorites → id-only fallback.
     var st = stations.getStation(msg.StationId, msg.Agency);
-    if (st) refreshFor(st, token); else sendError(2, token);
+    if (st) {
+      var mirror = loadMirror();
+      for (var i = 0; i < mirror.favs.length; i++) {
+        if (mirror.favs[i].id === msg.StationId) {
+          st.filterLines = mirror.favs[i].filterLines;
+          break;
+        }
+      }
+      st.apiKey = mirror.apiKey;
+      refreshFor(st, token);
+    } else sendError(2, token);
   }
 }
 
@@ -86,7 +99,18 @@ Pebble.addEventListener('ready', function () {
 });
 Pebble.addEventListener('appmessage', function (e) {
   if (e.payload && e.payload.FavSync) {
-    saveMirror(favsync.decodeFavList(e.payload.FavSync));
+    var newMirror = favsync.decodeFavList(e.payload.FavSync);
+    var oldMirror = loadMirror();
+    for (var i=0; i<newMirror.favs.length; i++) {
+       for (var j=0; j<oldMirror.favs.length; j++) {
+         if (oldMirror.favs[j].id === newMirror.favs[i].id && oldMirror.favs[j].agency === newMirror.favs[i].agency) {
+           newMirror.favs[i].filterLines = oldMirror.favs[j].filterLines;
+           break;
+         }
+       }
+    }
+    newMirror.apiKey = oldMirror.apiKey;
+    saveMirror(newMirror);
     return;
   }
   if (e.payload && e.payload.Clock != null) {   // watch pushed its clock mode
@@ -117,7 +141,7 @@ Pebble.addEventListener('showConfiguration', function () {
     // sys: lets the page label pure-PATH stations "· PATH", same as the watch.
     return { id: s.id, name: s.name, lines: s.lines, agency: s.agency, alt: s.alt, sys: s.sys };
   });
-  var html = config.buildConfigHtml(m.nearestPos, backfillAgency(m.favs), db, loadClock());
+  var html = config.buildConfigHtml(m.nearestPos, backfillAgency(m.favs), db, loadClock(), m.apiKey);
   Pebble.openURL('data:text/html,' + encodeURIComponent(html));
 });
 
@@ -126,6 +150,7 @@ Pebble.addEventListener('webviewclosed', function (e) {
   var payload;
   try { payload = JSON.parse(decodeURIComponent(e.response)); } catch (err) { return; }
   if (!payload) return;
+  if (payload.favs) saveMirror(payload);
   // The outbox is single-slot: a second send before the first is acked returns BUSY
   // and is dropped. So send Clock first, then FavSet only after Clock is acked.
   function sendFavSet() {

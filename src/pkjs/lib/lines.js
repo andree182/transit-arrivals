@@ -28,7 +28,8 @@ var COLORS = {
   'N':[252,204,10],'Q':[252,204,10],'R':[252,204,10],'W':[252,204,10],
   'L':[167,169,172],'S':[128,129,131],'SIR':[0,57,166],
   'NW':[217,58,48],'H3':[77,146,251],'HW':[101,193,0],
-  'JS':[255,153,0],'JH':[255,153,0],'NH':[140,60,150],'W3':[101,193,0]
+  'JS':[255,153,0],'JH':[255,153,0],'NH':[140,60,150],'W3':[101,193,0],
+  'pid_A':[0,165,98],'pid_B':[250,197,0],'pid_C':[217,34,42]
 };
 // The "S" bullet covers three shuttles in two feeds: the 42 St Shuttle rides in
 // the base feed (its station's primary group), while the Franklin Av and
@@ -36,7 +37,14 @@ var COLORS = {
 // every shuttle resolves regardless of which one the station belongs to.
 var EXTRA_GROUPS = { 'S': ['ace'] };
 function feedForLine(line) { return LINE_GROUP[line] || null; }
-function colorForLine(line) { return COLORS[line] || [255,255,255]; }
+function colorForLine(line, agency) {
+  if (agency === 'pid') {
+    if (COLORS['pid_' + line]) return COLORS['pid_' + line];
+    var num = parseInt(line, 10);
+    if (!isNaN(num)) return num < 100 ? [217,34,42] : [0,114,198];
+  }
+  return COLORS[line] || [255,255,255]; 
+}
 function feedUrls(lines) {
   var groups = {};
   lines.forEach(function (l) {

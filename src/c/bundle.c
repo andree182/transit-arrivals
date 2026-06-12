@@ -12,7 +12,7 @@ static uint16_t rd_u16(const uint8_t *p) { return (uint16_t)p[0] | ((uint16_t)p[
 static const char *const LEGACY_DIR_WORD[] = { "MANHATTAN", "BROOKLYN", "QUEENS", "BRONX", "" };
 
 bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
-  if (len < 56 || p[0] < 3 || p[0] > 8) return false;
+  if (len < 56 || p[0] < 3 || p[0] > 9) return false;
   size_t i = 0;
   out->version = p[i++];
   // v8 widened the id field 11 -> 39 bytes (longest real id: SEPTA's 38-byte
@@ -26,8 +26,13 @@ bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
   if (out->nLines > MAX_LINES) out->nLines = MAX_LINES;
   for (int l = 0; l < out->nLines; l++) {
     LineView *L = &out->lines[l];
-    if (i + 6 > len) return false;
-    memcpy(L->label, p + i, 2); L->label[2] = 0; i += 2;
+    if (out->version >= 9) {
+      if (i + 4 > len) return false;
+      memcpy(L->label, p + i, 4); L->label[4] = 0; i += 4;
+    } else {
+      if (i + 2 > len) return false;
+      memcpy(L->label, p + i, 2); L->label[2] = 0; i += 2;
+    }
     L->r = p[i++]; L->g = p[i++]; L->b = p[i++];
     L->nDirs = p[i++];
     L->sched = 0;
