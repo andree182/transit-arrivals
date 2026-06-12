@@ -12,6 +12,15 @@ compatibility_date = "2026-06-01"
 #   wrangler secret put HONOLULU_KEY          # Swiftly TheBus/Skyline trip updates (empty board if unset)
 #   wrangler secret put BALTIMORE_METRO_KEY   # Swiftly MDOT MTA Metro SubwayLink (mode degrades if unset)
 #   wrangler secret put BALTIMORE_LR_KEY      # Swiftly MDOT MTA Light RailLink (mode degrades if unset)
+#   wrangler secret put LAMETRO_KEY           # Swiftly LA Metro Rail trip updates + alerts (empty board if unset)
 
 [observability]
 enabled = true
+
+[[durable_objects.bindings]]
+name = "FEED_CACHE"
+class_name = "FeedCache"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["FeedCache"]

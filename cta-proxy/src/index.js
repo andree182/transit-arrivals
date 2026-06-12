@@ -1,4 +1,5 @@
 import { cached, json, corsResponse, nowSecs } from './shared.js';
+export { FeedCache } from './feedcache.js';
 import * as cta from './agencies/cta.js';
 import * as wmata from './agencies/wmata.js';
 import * as marta from './agencies/marta.js';
