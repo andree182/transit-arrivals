@@ -123,6 +123,26 @@ void hero_draw_bullet(GContext *ctx, GRect cell, const Bundle *b, uint8_t line) 
   draw_bullet(ctx, disc, cell.size.w / 2, &b->lines[line], false);
 }
 
+// Shared footer geometry: insets, the name box top, one line of GOTHIC_14, and
+// whether the stripped name wraps to two lines. hero_draw_footer and hero_clock_rect
+// both derive from this so the painted clock and the wiped clock rect always agree.
+typedef struct { int st_inset, st_top, boxw, oneLine_h; bool twoLine; } FooterMetrics;
+static FooterMetrics footer_metrics(GRect bounds, const char *stripped) {
+  GFont sf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  FooterMetrics m;
+  m.st_inset = PBL_IF_ROUND_ELSE(34, 4);
+  float SY = bounds.size.h / REF_H;
+  m.st_top = (int)(PBL_IF_ROUND_ELSE(132, 138) * SY);
+  m.boxw = bounds.size.w - 2 * m.st_inset;
+  GSize oneLine = graphics_text_layout_get_content_size("Wg", sf,
+                    GRect(0, 0, 400, 60), GTextOverflowModeFill, GTextAlignmentLeft);
+  m.oneLine_h = oneLine.h;
+  GSize nameSz = graphics_text_layout_get_content_size(stripped, sf,
+                   GRect(0, 0, m.boxw, 60), GTextOverflowModeWordWrap, GTextAlignmentCenter);
+  m.twoLine = nameSz.h > oneLine.h + 2;
+  return m;
+}
+
 // Draw the station footer with the current-time clock. When the stripped name fits
 // one line of GOTHIC_14 in its box, the clock gets its own bold line below it;
 // otherwise the time is appended inline as "name · HH:MM", trimming the name with an
@@ -132,32 +152,23 @@ static void hero_draw_footer(GContext *ctx, GRect bounds, const char *station, c
   static char stn[40];
   hero_station_strip(station, stn, sizeof stn);
   GFont sf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
-  int st_inset = PBL_IF_ROUND_ELSE(34, 4);
-  float SY = bounds.size.h / REF_H;
-  int st_top = (int)(PBL_IF_ROUND_ELSE(132, 138) * SY);
-  int boxw = bounds.size.w - 2 * st_inset;
-
-  GSize oneLine = graphics_text_layout_get_content_size("Wg", sf,
-                    GRect(0, 0, 400, 60), GTextOverflowModeFill, GTextAlignmentLeft);
-  GSize nameSz = graphics_text_layout_get_content_size(stn, sf,
-                    GRect(0, 0, boxw, 60), GTextOverflowModeWordWrap, GTextAlignmentCenter);
-  bool twoLine = nameSz.h > oneLine.h + 2;
+  FooterMetrics m = footer_metrics(bounds, stn);
 
   graphics_context_set_text_color(ctx, GColorWhite);
   if (!clk || !clk[0]) {                              // clock disabled: original footer
-    graphics_draw_text(ctx, stn, sf, GRect(st_inset, st_top, boxw, 34),
+    graphics_draw_text(ctx, stn, sf, GRect(m.st_inset, m.st_top, m.boxw, 34),
                        GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
     return;
   }
 
-  if (!twoLine) {
+  if (!m.twoLine) {
     // Name on its own line, clock bold on the line below.
-    graphics_draw_text(ctx, stn, sf, GRect(st_inset, st_top, boxw, oneLine.h + 2),
+    graphics_draw_text(ctx, stn, sf, GRect(m.st_inset, m.st_top, m.boxw, m.oneLine_h + 2),
                        GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
     GFont cf = fonts_get_system_font(PBL_IF_ROUND_ELSE(FONT_KEY_GOTHIC_18_BOLD, FONT_KEY_GOTHIC_14_BOLD));
     graphics_context_set_text_color(ctx, GColorLightGray);
-    int clk_top = st_top + oneLine.h + 1;
-    graphics_draw_text(ctx, clk, cf, GRect(st_inset, clk_top, boxw, 22),
+    int clk_top = m.st_top + m.oneLine_h + 1;
+    graphics_draw_text(ctx, clk, cf, GRect(m.st_inset, clk_top, m.boxw, 22),
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     return;
   }
@@ -170,12 +181,24 @@ static void hero_draw_footer(GContext *ctx, GRect bounds, const char *station, c
     if ((int)strlen(stn) == trim) snprintf(comp, sizeof comp, "%s · %s", stn, clk);
     else snprintf(comp, sizeof comp, "%.*s… · %s", trim, stn, clk);
     GSize cs = graphics_text_layout_get_content_size(comp, sf,
-                 GRect(0, 0, boxw, 60), GTextOverflowModeWordWrap, GTextAlignmentCenter);
-    if (cs.h <= 2 * oneLine.h + 2) break;
+                 GRect(0, 0, m.boxw, 60), GTextOverflowModeWordWrap, GTextAlignmentCenter);
+    if (cs.h <= 2 * m.oneLine_h + 2) break;
     trim--;                                            // drop a char and re-measure
   }
-  graphics_draw_text(ctx, comp, sf, GRect(st_inset, st_top, boxw, 2 * oneLine.h + 4),
+  graphics_draw_text(ctx, comp, sf, GRect(m.st_inset, m.st_top, m.boxw, 2 * m.oneLine_h + 4),
                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+}
+
+GRect hero_clock_rect(GRect bounds, const char *station) {
+  static char stn[40];
+  hero_station_strip(station, stn, sizeof stn);
+  FooterMetrics m = footer_metrics(bounds, stn);
+  if (m.twoLine) {
+    // Inline "· HH:MM" rides the second wrapped line.
+    return GRect(m.st_inset, m.st_top + m.oneLine_h, m.boxw, m.oneLine_h + 4);
+  }
+  // Dedicated bold clock line under the one-line name (font up to GOTHIC_18 on round).
+  return GRect(m.st_inset, m.st_top + m.oneLine_h + 1, m.boxw, 22);
 }
 
 static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, const LineView *L) {

@@ -78,6 +78,12 @@ int hero_station_glyphs(GRect bounds, const char *station, HeroGlyph *out, int m
 // such as the arrival wipe. Height is clamped to the bounds.
 GRect hero_station_rect(GRect bounds);
 
+// The bounding rect of the footer clock as hero_draw_footer paints it: its own
+// line below a one-line station name, or the second wrapped line (where the inline
+// "· HH:MM" sits) for a two-line name. For the arrival gold wipe to sweep the clock
+// along with the rest of the board.
+GRect hero_clock_rect(GRect bounds, const char *station);
+
 // Bounce the bullet-disc + countdown band vertically by `dy` pixels (a framebuffer
 // post-pass over the just-drawn board), leaving the rest of the hero put. Used for
 // the single-line "nothing here" nudge. The vacated edge fills with background and

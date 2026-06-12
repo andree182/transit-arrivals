@@ -9,7 +9,7 @@
 static bool  s_active;
 static int   s_elapsed;
 static bool  s_have_rects;
-static GRect s_rects[HERO_MAX_GLYPHS + 16];
+static GRect s_rects[HERO_MAX_GLYPHS + 16 + 1];   // hero glyphs + station footer + clock
 static int   s_nrects;
 
 void arrival_begin(bool haptic) {
@@ -66,6 +66,10 @@ static void build_rects(GRect bounds, const Bundle *b, uint8_t line,
   for (int i = 0; i < nsg; i++) {
     s_rects[s_nrects++] = sg[i].cell;
   }
+  // The footer clock (its own line, or the inline "· HH:MM" on a wrapped name) isn't
+  // in hero_station_glyphs, so add its rect explicitly — the sweep only golds
+  // non-background pixels, so a bounding box catches exactly the clock's ink.
+  s_rects[s_nrects++] = hero_clock_rect(bounds, b->station);
   s_have_rects = true;
 }
 
