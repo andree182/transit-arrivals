@@ -24,6 +24,7 @@
 // persisted anything beyond two lines.)
 #define PERSIST_BUNDLE_LEN    25
 #define PERSIST_BUNDLE_CHUNK0 26   // ..29: four chunks of up to 256 B = 1024 B
+#define PERSIST_CLOCK         30   // ClockMode: 0 auto, 1 12h, 2 24h
 #define BUNDLE_CHUNK_SZ  256
 #define BUNDLE_CHUNKS    4
 #define BUNDLE_CACHE_MAX (BUNDLE_CHUNK_SZ * BUNDLE_CHUNKS)
@@ -50,6 +51,7 @@ static uint8_t s_line = 0, s_dir = 0;
 static uint8_t s_line_dir[MAX_LINES] = {0};
 static uint8_t s_sel = 0;       // ring index: 0..ring_len()-1
 static uint8_t s_nearest_pos = 0; // 0..favorites_count() = Nearest slot position
+static uint8_t s_clock_mode = CLOCK_AUTO;   // footer clock: Auto/12h/24h (PERSIST_CLOCK)
 static bool s_switching = false;// true between a ring switch and the next bundle
 static char s_hint[FAV_NAME_LEN];
 static char s_alerts[700];       // active service-alert headlines, "\n"-joined ("" = none)
@@ -175,17 +177,18 @@ static bool has_alerts(void) { return s_alerts[0] != '\0'; }
 
 // Settings rows are dynamic, in order: Add, [Manage if favorites],
 // [Alerts if active], Refresh.
-typedef enum { ROW_ADD, ROW_MANAGE, ROW_ALERTS, ROW_REFRESH } SettingsRow;
+typedef enum { ROW_ADD, ROW_MANAGE, ROW_ALERTS, ROW_REFRESH, ROW_CLOCK } SettingsRow;
 static uint8_t settings_rows(SettingsRow *order) {
   uint8_t n = 0;
   order[n++] = ROW_ADD;
   if (favorites_count() > 0) order[n++] = ROW_MANAGE;
   if (has_alerts())          order[n++] = ROW_ALERTS;
   order[n++] = ROW_REFRESH;
+  order[n++] = ROW_CLOCK;
   return n;
 }
 static SettingsRow settings_row(uint16_t r) {
-  SettingsRow order[4];
+  SettingsRow order[5];
   uint8_t n = settings_rows(order);
   if (r >= n) r = n - 1;
   return order[r];
@@ -277,7 +280,7 @@ static void outbox_failed(DictionaryIterator *it, AppMessageResult r, void *ctx)
 }
 
 static uint16_t menu_num_rows(MenuLayer *m, uint16_t section, void *ctx) {
-  SettingsRow order[4];
+  SettingsRow order[5];
   return settings_rows(order);
 }
 
@@ -310,6 +313,12 @@ static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *idx, void
     case ROW_REFRESH:
       menu_cell_basic_draw(ctx, cell, "Refresh now", NULL, NULL);
       break;
+    case ROW_CLOCK: {
+      const char *v = s_clock_mode == CLOCK_12H ? "12-hour"
+                    : s_clock_mode == CLOCK_24H ? "24-hour" : "Auto";
+      menu_cell_basic_draw(ctx, cell, "Clock", v, NULL);
+      break;
+    }
   }
 }
 
@@ -334,6 +343,12 @@ static void menu_select(MenuLayer *m, MenuIndex *idx, void *c) {
     case ROW_REFRESH:
       request_refresh();
       window_stack_pop(true);
+      break;
+    case ROW_CLOCK:
+      s_clock_mode = (s_clock_mode + 1) % 3;     // Auto -> 12h -> 24h -> Auto
+      hero_set_clock_mode((ClockMode)s_clock_mode);
+      persist_write_int(PERSIST_CLOCK, s_clock_mode);
+      menu_layer_reload_data(m);
       break;
   }
 }
@@ -1384,6 +1399,8 @@ static void init(void) {
     persist_write_int(PERSIST_NEAREST_POS, s_nearest_pos);
   }
   s_sel = persist_exists(PERSIST_SEL) ? (uint8_t)persist_read_int(PERSIST_SEL) : 0;
+  s_clock_mode = persist_exists(PERSIST_CLOCK) ? (uint8_t)persist_read_int(PERSIST_CLOCK) : CLOCK_AUTO;
+  hero_set_clock_mode((ClockMode)s_clock_mode);
   clamp_sel();
 #ifdef MTA_DEBUG_STUB
   // Cold-start into the loading interstitial, then simulate a feed arrival so

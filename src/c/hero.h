@@ -2,6 +2,19 @@
 #include <pebble.h>
 #include "bundle.h"
 
+// Clock display mode, persisted on the watch. AUTO follows clock_is_24h_style().
+typedef enum { CLOCK_AUTO = 0, CLOCK_12H = 1, CLOCK_24H = 2 } ClockMode;
+
+// Set the footer clock format the hero draws with. Module state (not a hero_draw
+// param) so every draw path — including the transition/flip frames that call
+// hero_draw without access to the persisted setting — stays in sync. main.c calls
+// this on launch and whenever the Clock setting changes.
+void hero_set_clock_mode(ClockMode mode);
+
+// Write the current local time into out per the active mode. 12h drops the leading
+// zero ("7:42"); 24h is zero-padded ("19:42"). out must hold >= 6 bytes.
+void hero_clock_string(char *out, size_t n, ClockMode mode);
+
 // Draws the arrivals hero for lines[line].dirs[dir] into ctx over `bounds`.
 // `now` is current epoch secs; countdown = epochBase + delta - now.
 void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8_t dir, time_t now);

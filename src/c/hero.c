@@ -1,5 +1,22 @@
 #include "hero.h"
 #include <string.h>
+#include <time.h>
+
+static ClockMode s_clock = CLOCK_AUTO;
+void hero_set_clock_mode(ClockMode mode) { s_clock = mode; }
+
+void hero_clock_string(char *out, size_t n, ClockMode mode) {
+  if (n == 0) return;
+  time_t t = time(NULL);
+  struct tm *lt = localtime(&t);
+  bool h24 = (mode == CLOCK_24H) || (mode == CLOCK_AUTO && clock_is_24h_style());
+  if (h24) {
+    strftime(out, n, "%H:%M", lt);                // 19:42
+  } else {
+    int h = lt->tm_hour % 12; if (h == 0) h = 12;
+    snprintf(out, n, "%d:%02d", h, lt->tm_min);   // 7:42, no leading zero
+  }
+}
 
 #define REF_W 144.0f
 #define REF_H 168.0f
@@ -106,6 +123,61 @@ void hero_draw_bullet(GContext *ctx, GRect cell, const Bundle *b, uint8_t line) 
   draw_bullet(ctx, disc, cell.size.w / 2, &b->lines[line], false);
 }
 
+// Draw the station footer with the current-time clock. When the stripped name fits
+// one line of GOTHIC_14 in its box, the clock gets its own bold line below it;
+// otherwise the time is appended inline as "name · HH:MM", trimming the name with an
+// ellipsis if needed so the time is never pushed off. clk holds the preformatted
+// "HH:MM" (empty string -> no clock).
+static void hero_draw_footer(GContext *ctx, GRect bounds, const char *station, const char *clk) {
+  static char stn[40];
+  hero_station_strip(station, stn, sizeof stn);
+  GFont sf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  int st_inset = PBL_IF_ROUND_ELSE(34, 4);
+  float SY = bounds.size.h / REF_H;
+  int st_top = (int)(PBL_IF_ROUND_ELSE(132, 138) * SY);
+  int boxw = bounds.size.w - 2 * st_inset;
+
+  GSize oneLine = graphics_text_layout_get_content_size("Wg", sf,
+                    GRect(0, 0, 400, 60), GTextOverflowModeFill, GTextAlignmentLeft);
+  GSize nameSz = graphics_text_layout_get_content_size(stn, sf,
+                    GRect(0, 0, boxw, 60), GTextOverflowModeWordWrap, GTextAlignmentCenter);
+  bool twoLine = nameSz.h > oneLine.h + 2;
+
+  graphics_context_set_text_color(ctx, GColorWhite);
+  if (!clk || !clk[0]) {                              // clock disabled: original footer
+    graphics_draw_text(ctx, stn, sf, GRect(st_inset, st_top, boxw, 34),
+                       GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    return;
+  }
+
+  if (!twoLine) {
+    // Name on its own line, clock bold on the line below.
+    graphics_draw_text(ctx, stn, sf, GRect(st_inset, st_top, boxw, oneLine.h + 2),
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+    GFont cf = fonts_get_system_font(PBL_IF_ROUND_ELSE(FONT_KEY_GOTHIC_18_BOLD, FONT_KEY_GOTHIC_14_BOLD));
+    graphics_context_set_text_color(ctx, GColorLightGray);
+    int clk_top = st_top + oneLine.h + 1;
+    graphics_draw_text(ctx, clk, cf, GRect(st_inset, clk_top, boxw, 22),
+                       GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    return;
+  }
+
+  // Two-line name: append " · HH:MM"; trim the name until name+sep+time fits 2 lines.
+  static char comp[56];
+  int trim = (int)strlen(stn);
+  for (;;) {
+    if (trim <= 1) { snprintf(comp, sizeof comp, "%s", clk); break; }
+    if ((int)strlen(stn) == trim) snprintf(comp, sizeof comp, "%s · %s", stn, clk);
+    else snprintf(comp, sizeof comp, "%.*s… · %s", trim, stn, clk);
+    GSize cs = graphics_text_layout_get_content_size(comp, sf,
+                 GRect(0, 0, boxw, 60), GTextOverflowModeWordWrap, GTextAlignmentCenter);
+    if (cs.h <= 2 * oneLine.h + 2) break;
+    trim--;                                            // drop a char and re-measure
+  }
+  graphics_draw_text(ctx, comp, sf, GRect(st_inset, st_top, boxw, 2 * oneLine.h + 4),
+                     GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+}
+
 static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, const LineView *L) {
   float SX = bounds.size.w / REF_W, SY = bounds.size.h / REF_H;
   graphics_context_set_antialiased(ctx, true);
@@ -133,12 +205,16 @@ static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, co
 
   // Station footer pinned to the bottom; the reason fills the gap above it so
   // the two can never overlap regardless of how many lines the reason wraps to.
+  // The clock joins this single line inline ("name · HH:MM") — the degraded screen
+  // has no room for a separate clock line.
   int foot_inset = PBL_IF_ROUND_ELSE(34, 4);
   int foot_top = bounds.size.h - 18 - PBL_IF_ROUND_ELSE(8, 2);
   graphics_context_set_text_color(ctx, GColorWhite);
-  static char stn[40];
+  static char stn[40], foot[56];
   hero_station_strip(b->station, stn, sizeof stn);
-  graphics_draw_text(ctx, stn, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+  char clk[8]; hero_clock_string(clk, sizeof clk, s_clock);
+  snprintf(foot, sizeof foot, "%s · %s", stn, clk);
+  graphics_draw_text(ctx, foot, fonts_get_system_font(FONT_KEY_GOTHIC_14),
     GRect(foot_inset, foot_top, bounds.size.w - 2 * foot_inset, 18),
     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 
@@ -326,16 +402,11 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
     }
   }
 
-  // Current station, dimmer, below NEXT. Wrap to two lines so long names are
-  // never clipped; the box is sized for two lines of GOTHIC_14.
-  GFont sf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
-  graphics_context_set_text_color(ctx, GColorWhite);
-  int st_inset = PBL_IF_ROUND_ELSE(34, 4);
-  int st_top = (int)(PBL_IF_ROUND_ELSE(132, 138) * SY);
-  static char stn[40];
-  hero_station_strip(b->station, stn, sizeof stn);
-  graphics_draw_text(ctx, stn, sf, GRect(st_inset, st_top, bounds.size.w - 2 * st_inset, 34),
-                     GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+  // Current station + current-time clock, below NEXT. The footer helper picks the
+  // layout: clock on its own bold line when the name is one line, inline after the
+  // wrapped name otherwise.
+  char clk[8]; hero_clock_string(clk, sizeof clk, s_clock);
+  hero_draw_footer(ctx, bounds, b->station, clk);
 }
 
 // Emit one HeroGlyph per non-space character of a single line of text, matching
