@@ -5,6 +5,66 @@ function safeJson(obj) {
   return JSON.stringify(obj).replace(/<\//g, '<\\/').replace(/<!--/g, '<\\u0021--');
 }
 
+// Station-search tokenizer: lowercase, punctuation (-/·&.) as word breaks,
+// ordinal suffixes dropped (14th -> 14), and the long forms riders type folded
+// onto the dataset's abbreviations (avenue -> Av, square -> Sq, ...). Defined as
+// real functions (not page-string code) so they are unit-testable; their source
+// is injected into the config page via Function.prototype.toString, so they
+// must stay ES5 and self-contained.
+function normTokens(s) {
+  var MAP = { avenue: 'av', ave: 'av', street: 'st', square: 'sq', road: 'rd',
+              boulevard: 'blvd', parkway: 'pkwy', place: 'pl', plaza: 'plz',
+              heights: 'hts', center: 'ctr', centre: 'ctr', fort: 'ft',
+              terrace: 'ter', junction: 'jct' };
+  var words = String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ');
+  var out = [];
+  for (var i = 0; i < words.length; i++) {
+    var w = words[i];
+    if (!w) continue;
+    var m = w.match(/^(\d+)(st|nd|rd|th)$/);
+    if (m) w = m[1];
+    out.push(MAP[w] || w);
+  }
+  return out;
+}
+// Every query token must prefix-match a station-name token (the display name or
+// any member platform's alt name — "6 Av" inside the merged "14 St"), or name
+// itself as a set of line bullets the station serves ("fml123" -> the
+// F/M/L/1/2/3 complex; "sir" -> the SIR as a whole bullet). Empty queries match
+// nothing.
+function stationMatches(q, name, lines, alt) {
+  var qt = normTokens(q), nt = normTokens(name);
+  for (var a = 0; alt && a < alt.length; a++) nt = nt.concat(normTokens(alt[a]));
+  if (!qt.length) return false;
+  lines = lines || [];
+  var lineSet = {};
+  for (var i = 0; i < lines.length; i++) lineSet[String(lines[i]).toLowerCase()] = true;
+  for (var t = 0; t < qt.length; t++) {
+    var tok = qt[t], hit = false;
+    for (var j = 0; j < nt.length && !hit; j++) hit = nt[j].indexOf(tok) === 0;
+    if (!hit && lineSet[tok]) hit = true;            // whole token is one bullet (SIR, Bl)
+    if (!hit && lines.length) {                      // token as a SET of 1-char bullets
+      hit = true;
+      for (var k = 0; k < tok.length && hit; k++) hit = !!lineSet[tok.charAt(k)];
+    }
+    if (!hit) return false;
+  }
+  return true;
+}
+// Result ordering among matches: 0 when every query token exactly equals a name
+// (or alt-name) token ("14 st" === "14 St"), 1 when some token only
+// prefix-matched ("14" in "145 St"). Lower sorts first.
+function stationRank(q, name, alt) {
+  var qt = normTokens(q), nt = normTokens(name);
+  for (var a = 0; alt && a < alt.length; a++) nt = nt.concat(normTokens(alt[a]));
+  for (var t = 0; t < qt.length; t++) {
+    var exact = false;
+    for (var j = 0; j < nt.length && !exact; j++) exact = nt[j] === qt[t];
+    if (!exact) return 1;
+  }
+  return 0;
+}
+
 function buildConfigHtml(nearestPos, favs, stationDB, clock) {
   var initState = safeJson({ nearestPos: nearestPos, favs: favs, clock: clock | 0 });
   var db = safeJson(stationDB);
@@ -49,6 +109,9 @@ function buildConfigHtml(nearestPos, favs, stationDB, clock) {
 'var state=JSON.parse(document.getElementById("init-state").textContent);' +
 'var DB=JSON.parse(document.getElementById("station-db").textContent);' +
 'function disp(s){return s.name+(s.lines&&s.lines.length?" ("+s.lines.join("")+")":"");}' +
+normTokens.toString() + ';' +
+stationMatches.toString() + ';' +
+stationRank.toString() + ';' +
 // One distinct, city-iconic color per agency (used for the row badge AND the
 // filter chip). Kept visually separable so every city reads uniquely.
 'var AGENCY_META={mta:{city:"NYC",c:"#0039A6"},cta:{city:"CHI",c:"#2A8FD4"},wmata:{city:"DC",c:"#C8102E"},marta:{city:"ATL",c:"#F2A900"},bart:{city:"SF",c:"#ED7B26"},mbta:{city:"BOS",c:"#00843D"},septa:{city:"PHL",c:"#7C3AED"},gcrta:{city:"CLE",c:"#008C95"},miami:{city:"MIA",c:"#EC008C"},baltimore:{city:"BAL",c:"#8DC63F"},skyline:{city:"HNL",c:"#FF6F61"},patco:{city:"PAT",c:"#BC0035"},trenurbano:{city:"SJU",c:"#C03230"},lametro:{city:"LA",c:"#0072BC"}};' +
@@ -86,22 +149,38 @@ function buildConfigHtml(nearestPos, favs, stationDB, clock) {
 'document.getElementById("cap").textContent=state.favs.length+"/"+MAX+" favorites";' +
 '}' +
 'function move(i,d){var j=i+d;if(j<0||j>=state.favs.length)return;var t=state.favs[i];state.favs[i]=state.favs[j];state.favs[j]=t;renderFavs();}' +
+'function isFav(st){for(var k=0;k<state.favs.length;k++)if(state.favs[k].id===st.id&&state.favs[k].agency===st.agency)return true;return false;}' +
+'function hintRow(ul,text){var li=document.createElement("li");li.style.color="#888";li.style.background="transparent";li.textContent=text;ul.appendChild(li);}' +
 'function search(q){' +
-'var ul=document.getElementById("results");ul.innerHTML="";if(!q){return;}' +
-'var ql=q.toLowerCase(),shown=0;' +
-'for(var k=0;k<DB.length&&shown<25;k++){var s=DB[k];' +
+'var ul=document.getElementById("results");ul.innerHTML="";if(!q||!q.replace(/\\s/g,"")){return;}' +
+'var hits=[];' +
+'for(var k=0;k<DB.length;k++){var s=DB[k];' +
 'if(!applyCity(s))continue;' +
-'if(s.name.toLowerCase().indexOf(ql)<0)continue;' +
+'if(!stationMatches(q,s.name,s.lines,s.alt))continue;' +
+'hits.push([stationRank(q,s.name,s.alt),hits.length,s]);}' +
+'hits.sort(function(a,b){return a[0]-b[0]||a[1]-b[1];});' +   // exact-token matches first; DB order within
+'var shown=0,more=hits.length>25?hits.length-25:0;' +
+'for(var h=0;h<hits.length&&shown<25;h++,shown++){' +
 '(function(st){var li=document.createElement("li");' +
 'var badge=badgeEl(st);if(badge)li.appendChild(badge);' +
 'var nameSpan=document.createElement("span");nameSpan.textContent=disp(st);li.appendChild(nameSpan);' +
-'li.onclick=function(){add(st);};ul.appendChild(li);})(s);shown++;}' +
+// Member platform names ("· 6 Av") disambiguate same-named complexes
+// (the three 14 Sts) right in the result row.
+'if(st.alt&&st.alt.length){var altSpan=document.createElement("span");altSpan.style.color="#9aa";altSpan.style.marginLeft="6px";altSpan.style.fontSize="13px";altSpan.textContent="\\u00b7 "+st.alt.join(" / ");li.appendChild(altSpan);}' +
+'if(isFav(st)){li.style.opacity="0.5";var tick=document.createElement("span");tick.style.marginLeft="auto";tick.style.color="#6e6";tick.textContent="\\u2713 Added";li.appendChild(tick);}' +
+'else li.onclick=function(){add(st,li);};' +
+'ul.appendChild(li);})(hits[h][2]);}' +
+'if(more)hintRow(ul,more+" more \\u2014 keep typing to narrow");' +
+'if(!shown)hintRow(ul,"No stations match \\u2014 try fewer words, or line letters like FML");' +
 '}' +
-'function add(st){' +
-'if(state.favs.length>=MAX)return;' +
-'for(var k=0;k<state.favs.length;k++)if(state.favs[k].id===st.id&&state.favs[k].agency===st.agency)return;' +
+// Adding keeps the query and result list on screen; the tapped row flips to
+// "Added" in place, so there is visible feedback and nearby variants stay
+// pickable. A full list says so instead of silently ignoring the tap.
+'function add(st,li){' +
+'if(isFav(st))return;' +
+'if(state.favs.length>=MAX){li.style.color="#f88";li.lastChild.textContent=disp(st)+" \\u2014 favorites full (10)";return;}' +
 'state.favs.push({id:st.id,name:disp(st),label:"",agency:st.agency});' +
-'document.getElementById("search").value="";search("");renderFavs();' +
+'renderFavs();search(document.getElementById("search").value);' +
 '}' +
 'document.getElementById("search").addEventListener("input",function(e){search(e.target.value);});' +
 // Clock segmented control: highlight the active mode, update state on tap.
@@ -115,4 +194,4 @@ function buildConfigHtml(nearestPos, favs, stationDB, clock) {
 '})();</script></body></html>';
 }
 
-module.exports = { buildConfigHtml: buildConfigHtml };
+module.exports = { buildConfigHtml: buildConfigHtml, _normTokens: normTokens, _stationMatches: stationMatches, _stationRank: stationRank };

@@ -112,7 +112,9 @@ function backfillAgency(favs) {
 Pebble.addEventListener('showConfiguration', function () {
   var m = loadMirror();
   var db = stations._db.map(function (s) {
-    return { id: s.id, name: s.name, lines: s.lines, agency: s.agency };
+    // alt: member platform names of a merged complex ("6 Av" inside "14 St"),
+    // searchable and shown on the result row; omitted when absent.
+    return { id: s.id, name: s.name, lines: s.lines, agency: s.agency, alt: s.alt };
   });
   var html = config.buildConfigHtml(m.nearestPos, backfillAgency(m.favs), db, loadClock());
   Pebble.openURL('data:text/html,' + encodeURIComponent(html));

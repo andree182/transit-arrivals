@@ -1,5 +1,12 @@
 # Transit Arrivals — Changelog
 
+## 1.12
+
+- **Every line a station serves now always appears on its board.** A big complex like 14 St/6 Av pulls four separate live feeds (1·2·3 / B·D·F·M / L / PATH), and there were still ways for a line to silently vanish: a feed answering with an *empty* body slipped past the failure detection, and a healthy feed with no trains for this stop (planned work skipping it, an off-hours service pattern) showed nothing at all. Now an empty feed retries once and then fails honestly, and any served line with no arrivals — whatever the reason — shows as NO DATA instead of not existing. Live lines always sort first, so the watch's 8-line cap can only ever crowd out placeholders.
+- **Stations are findable by any of their platform names.** A merged complex keeps one display name, which made its other platforms unsearchable — "6 Av" (the L at 14 St), "Bleecker St", "Court Sq", "Port Authority" found nothing. Member platform names now ride along as search aliases and show on the result row ("14 St · 6 Av"), which also finally tells the three 14 Sts apart at a glance.
+- **Station search that forgives how people actually type.** "14th Street", "Union Square", and "DeKalb Avenue" now find "14 St", "Union Sq", and "DeKalb Av". Hyphens and slashes don't matter. And you can search by bullets: "FML123" jumps straight to the 14 St/6 Av complex, "fm" lists every F+M station. Exact matches rank above prefix matches, so "14 St" beats "145 St".
+- **Adding favorites feels like it worked.** Tapping a search result used to silently wipe your search. Now the result list stays put, the tapped row flips to "✓ Added", rows already saved show as added, an over-full list says "favorites full" instead of ignoring you, and a truncated result list says how many more matches to narrow down.
+
 ## 1.11
 
 - **Three more systems.** Miami Metrorail, Baltimore Metro SubwayLink, and LA Metro Rail (the A, B, C, D, E, and K lines) are now live.

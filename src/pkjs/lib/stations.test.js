@@ -212,3 +212,16 @@ test('lametro is registered and live in the search DB', () => {
   const la = nearestStation(34.0560, -118.2340);
   assert.ok(la && la.agency === 'lametro', 'downtown LA resolves to a lametro station');
 });
+
+test('merged complexes carry their member platform names as alt search names', () => {
+  // 14 St/6 Av complex: the L platform is "6 Av" in the GTFS; a rider searching
+  // "6th Ave" must find it even though the merged entry is named "14 St".
+  const sixth = getStation('132', 'mta');
+  assert.ok(sixth.alt && sixth.alt.indexOf('6 Av') >= 0, '132 carries "6 Av" alt');
+  // 14 St on 8th Av: the L platform there is "8 Av".
+  const eighth = getStation('A31', 'mta');
+  assert.ok(eighth.alt && eighth.alt.indexOf('8 Av') >= 0, 'A31 carries "8 Av" alt');
+  // Alt names never duplicate the entry's own name (normalized): D19 is also
+  // called "14 St" and must not appear as an alt of 132.
+  assert.ok(sixth.alt.indexOf('14 St') < 0, 'own name not repeated as alt');
+});

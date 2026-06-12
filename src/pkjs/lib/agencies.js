@@ -63,7 +63,6 @@ function decorate(model) {
 function getArrivals(station, cb) {
   var feeds = linesLib.feedGroups(station.lines);
   var rows = [], pendingFeeds = feeds.length, failedFeeds = 0;
-  var failedLines = {};   // line -> true: its feed failed (after a retry), so its data is missing
   var alertsDone = false, suspensions = [], alerts = [];
 
   function finish() {
@@ -76,12 +75,14 @@ function getArrivals(station, cb) {
       var running = rawModel.some(function (m) { return m.line === s.code; });
       if (!running) rawModel.push({ line: s.code, directions: [], notice: s.reason });
     });
-    // A feed that failed (even after one retry) would otherwise hide its lines
-    // entirely; surface them as NO DATA so the rider still sees every line the
-    // station serves (e.g. F/M/L at 14 St when the B-D-F-M or L feed hiccups),
-    // not just the lines whose feed happened to load. "No live arrivals" prefix
-    // makes the watch render "NO DATA" (same as SEPTA El/BSL).
-    Object.keys(failedLines).forEach(function (l) {
+    // EVERY line the station serves appears on the board, whatever the cause of
+    // its absence — a failed feed, a healthy feed with no trains for this stop
+    // (planned work skipping it, an off-hours service pattern), or a feed shape
+    // we didn't anticipate. Absence renders as NO DATA ("No live arrivals"
+    // prefix, same as SEPTA El/BSL), never as a line that doesn't exist.
+    // Appended AFTER the live lines, so the watch's 8-line cap can only crowd
+    // out placeholders, never a line with real trains.
+    station.lines.forEach(function (l) {
       if (!rawModel.some(function (m) { return m.line === l; })) {
         rawModel.push({ line: l, directions: [], notice: 'No live arrivals right now' });
       }
@@ -113,23 +114,35 @@ function getArrivals(station, cb) {
   ax.ontimeout = function () { console.log('[mta] alerts TIMEOUT'); alertsDone = true; finish(); };
   ax.send();
 
-  // Fetch a feed; on a network error, retry once before giving up (a single
-  // transient hiccup shouldn't silently drop that feed's whole line group).
-  function fetchFeedRetry(url, done) {
-    fetchFeed(url, function (err, buf) {
-      if (!err) return done(null, buf);
-      fetchFeed(url, done);
+  // Fetch + parse a feed; an unparseable or EMPTY body (an HTTP 200 with zero
+  // entities — e.g. CDN load-shed) counts as a failure just like a network
+  // error, and the whole attempt retries once. The subway and PATH run 24/7, so
+  // a TripUpdate feed with no rows at all is never real data; without this
+  // check it slipped through and silently dropped that feed's whole line group.
+  function fetchRowsRetry(url, done) {
+    function attempt(cb) {
+      fetchFeed(url, function (err, buf) {
+        if (err) return cb(err);
+        var got;
+        try { got = gtfsrt.extractStopTimes(buf); }
+        catch (e) { return cb(e); }
+        if (!got.length) return cb(new Error('empty feed'));
+        cb(null, got);
+      });
+    }
+    attempt(function (err, got) {
+      if (!err) return done(null, got);
+      attempt(done);
     });
   }
   feeds.forEach(function (f) {
-    fetchFeedRetry(f.url, function (err, buf) {
-      var failed = false;
-      if (err) { failed = true; console.log('[mta] feed FAIL ' + err.message + ' ' + f.url); }
-      else {
-        try { rows = rows.concat(gtfsrt.extractStopTimes(buf)); }
-        catch (e) { failed = true; console.log('[mta] parse EXC ' + e.message + ' ' + f.url); }
+    fetchRowsRetry(f.url, function (err, got) {
+      if (err) {
+        console.log('[mta] feed FAIL ' + err.message + ' ' + f.url);
+        failedFeeds++;
+      } else {
+        rows = rows.concat(got);
       }
-      if (failed) { failedFeeds++; f.lines.forEach(function (l) { failedLines[l] = true; }); }
       pendingFeeds--; finish();
     });
   });
