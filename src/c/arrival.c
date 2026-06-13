@@ -69,7 +69,10 @@ static void build_rects(GRect bounds, const Bundle *b, uint8_t line,
   // The footer clock (its own line, or the inline "· HH:MM" on a wrapped name) isn't
   // in hero_station_glyphs, so add its rect explicitly — the sweep only golds
   // non-background pixels, so a bounding box catches exactly the clock's ink.
-  s_rects[s_nrects++] = hero_clock_rect(bounds, b->station);
+  // The clock updates out-of-band via tick timer. To avoid a full-screen wipe
+  // just for the minute tick, wipe the clock's rect inside the hero_draw footer
+  // and repaint it.
+  s_rects[s_nrects++] = hero_clock_rect(bounds, "");
   s_have_rects = true;
 }
 

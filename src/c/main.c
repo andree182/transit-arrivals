@@ -1212,34 +1212,31 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   arrival_render(ctx, b, &s_bundle, s_line, s_dir, time(NULL));  // gold wipe over the just-drawn board
   if (s_bounce_dy) hero_bounce_band(ctx, b, s_bounce_dy);        // single-line nudge: bob the disc + countdown
 
+  int pos_top = PBL_IF_ROUND_ELSE(20, 2);
+#if defined(PBL_ROUND)
+  int rr = b.size.w / 2;
+  int dy = rr - pos_top - 2;
+  int q = rr * rr - dy * dy;
+  int half = 0; while ((half + 1) * (half + 1) <= q) half++;
+  int pos_inset = rr - half + 2;
+#else
+  int pos_inset = 4;
+#endif
+
   // Ring position, e.g. "2/4". Shown only when the ring has more than one slot.
   if (ring_len() > 1) {
     static char pos[12];
     snprintf(pos, sizeof(pos), "%d/%d", (int)s_sel + 1, (int)ring_len());
     graphics_context_set_text_color(ctx, GColorLightGray);
-    // Round: the bezel arc clips the top-left corner, and how far in it cuts
-    // depends on the radius (chalk 180 vs gabbro 260). Compute the chord
-    // half-width at the indicator's top glyph row and inset past it, instead
-    // of a fixed offset tuned to one device. Rect keeps the tight corner.
-    int pos_top = PBL_IF_ROUND_ELSE(20, 2);
-#if defined(PBL_ROUND)
-    int rr = b.size.w / 2;
-    int dy = rr - pos_top - 2;                 // glyph top sits ~2 px into the box
-    int q = rr * rr - dy * dy;
-    int half = 0; while ((half + 1) * (half + 1) <= q) half++;
-    int pos_inset = rr - half + 2;
-#else
-    int pos_inset = 4;
-#endif
     graphics_draw_text(ctx, pos, fonts_get_system_font(FONT_KEY_GOTHIC_14),
-      GRect(pos_inset, pos_top, 40, 16), GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+      GRect(0, pos_top, b.size.w - pos_inset, 16), GTextOverflowModeFill, GTextAlignmentRight, NULL);
   }
 
-  // Service-alert badge: a warning triangle top-right when the current station
+  // Service-alert badge: a warning triangle top-left when the current station
   // has active alerts. Details live behind the settings "Service alerts" row.
   if (s_alerts[0]) {
-    int bx = b.size.w - PBL_IF_ROUND_ELSE(46, 20);
-    int by = PBL_IF_ROUND_ELSE(20, 2);
+    int bx = pos_inset;
+    int by = pos_top;
     gpath_move_to(s_warn_path, GPoint(bx, by));
     graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorYellow, GColorWhite));
     gpath_draw_filled(ctx, s_warn_path);

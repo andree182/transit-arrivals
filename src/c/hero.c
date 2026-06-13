@@ -233,11 +233,8 @@ static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, co
   int foot_inset = PBL_IF_ROUND_ELSE(34, 4);
   int foot_top = bounds.size.h - 18 - PBL_IF_ROUND_ELSE(8, 2);
   graphics_context_set_text_color(ctx, GColorWhite);
-  static char stn[40], foot[56];
-  hero_station_strip(b->station, stn, sizeof stn);
   char clk[8]; hero_clock_string(clk, sizeof clk, s_clock);
-  snprintf(foot, sizeof foot, "%s · %s", stn, clk);
-  graphics_draw_text(ctx, foot, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+  graphics_draw_text(ctx, clk, fonts_get_system_font(FONT_KEY_GOTHIC_14),
     GRect(foot_inset, foot_top, bounds.size.w - 2 * foot_inset, 18),
     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 
@@ -269,13 +266,12 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   // knows the countdowns come from the published schedule, not a live feed.
   int hdr_inset = PBL_IF_ROUND_ELSE(34, 4);
   int dir_top = (int)(6 * SY);
-  bool schedTag = (!D->dirLabel[0] && L->sched);
-  const char *topTag = (D->dirLabel[0]) ? D->dirLabel : (L->sched ? "SCHED" : NULL);
+  const char *topTag = b->station;
   if (topTag) {
-    graphics_context_set_text_color(ctx, schedTag ? PBL_IF_COLOR_ELSE(GColorYellow, GColorWhite) : GColorLightGray);
+    graphics_context_set_text_color(ctx, GColorLightGray);
     graphics_draw_text(ctx, topTag, fonts_get_system_font(FONT_KEY_GOTHIC_14),
       GRect(hdr_inset, dir_top, bounds.size.w - 2 * hdr_inset, 16),
-      GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
   }
 
   // On round, the top chord is narrow: inset hard and let the headsign wrap to
@@ -286,8 +282,11 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   int hdr_top = dir_top + (topTag ? 14 : 2);
   int hdr_h = PBL_IF_ROUND_ELSE(38, 22);
   GTextOverflowMode hdr_of = PBL_IF_ROUND_ELSE(GTextOverflowModeWordWrap, GTextOverflowModeTrailingEllipsis);
-  graphics_draw_text(ctx, D->dest, hdr, GRect(hdr_inset, hdr_top, bounds.size.w - 2 * hdr_inset, hdr_h),
-                     hdr_of, GTextAlignmentCenter, NULL);
+  
+  char destStr[30];
+  snprintf(destStr, sizeof(destStr), "> %s", D->dest);
+  graphics_draw_text(ctx, destStr, hdr, GRect(hdr_inset, hdr_top, bounds.size.w - 2 * hdr_inset, hdr_h),
+                     hdr_of, GTextAlignmentLeft, NULL);
 
   // On taller screens the hero (disc + count) otherwise floats low with a dead
   // band above it. Lift it proportionally to how much taller the screen is than
@@ -429,7 +428,7 @@ void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8
   // layout: clock on its own bold line when the name is one line, inline after the
   // wrapped name otherwise.
   char clk[8]; hero_clock_string(clk, sizeof clk, s_clock);
-  hero_draw_footer(ctx, bounds, b->station, clk);
+  hero_draw_footer(ctx, bounds, "", clk);
 }
 
 // Emit one HeroGlyph per non-space character of a single line of text, matching
@@ -495,21 +494,23 @@ int hero_glyphs(GRect bounds, const Bundle *b, uint8_t line, uint8_t dir,
   // --- direction label (row 0) ------------------------------------------------
   int hdr_inset = PBL_IF_ROUND_ELSE(34, 4);
   int dir_top = (int)(6 * SY);
-  const char *dlabel = (D->dirLabel[0]) ? D->dirLabel : NULL;
+  const char *dlabel = b->station;
   if (dlabel) {
     n = emit_chars(out, n, max, dlabel, fonts_get_system_font(FONT_KEY_GOTHIC_14),
                    GColorLightGray, GColorBlack,
                    GRect(hdr_inset, dir_top, bounds.size.w - 2 * hdr_inset, 16),
-                   GTextAlignmentCenter, 0);
+                   GTextAlignmentLeft, 0);
   }
 
   // --- headsign (row 1) -------------------------------------------------------
   GFont hdr = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
   int hdr_top = dir_top + ((dlabel || L->sched) ? 14 : 2);   // match hero_draw: SCHED badge reserves the top slot
   int hdr_h = PBL_IF_ROUND_ELSE(38, 22);
-  n = emit_chars(out, n, max, D->dest, hdr, GColorWhite, GColorBlack,
+  char destStr[30];
+  snprintf(destStr, sizeof(destStr), "> %s", D->dest);
+  n = emit_chars(out, n, max, destStr, hdr, GColorWhite, GColorBlack,
                  GRect(hdr_inset, hdr_top, bounds.size.w - 2 * hdr_inset, hdr_h),
-                 GTextAlignmentCenter, 1);
+                 GTextAlignmentLeft, 1);
 
   // --- disc + countdown (row 2) — geometry mirrors hero_draw ------------------
   int lift = (int)((SY - 1.0f) * 30.0f);
