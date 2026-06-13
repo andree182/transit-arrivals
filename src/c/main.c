@@ -1028,8 +1028,18 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
       if (s_launch_settle) { app_timer_cancel(s_launch_settle); s_launch_settle = NULL; }
       if (strcmp(prev_id, s_bundle.id) != 0) {
         memset(s_line_dir, 0, sizeof(s_line_dir));        // forget the old station's per-line directions
-        viewmem_get(s_bundle.id, &s_line, &s_dir);        // reopen on the line+dir we left this station at
-        clamp_view();                                     // clamp to the fresh bundle
+        uint32_t min_delta = 0xFFFFFFFFu;
+        uint8_t best_l = 0, best_d = 0;
+        for (uint8_t l = 0; l < s_bundle.nLines; l++) {
+          for (uint8_t d = 0; d < s_bundle.lines[l].nDirs; d++) {
+            if (s_bundle.lines[l].dirs[d].n > 0) {
+              uint32_t delta = s_bundle.lines[l].dirs[d].delta[0];
+              if (delta < min_delta) { min_delta = delta; best_l = l; best_d = d; }
+            }
+          }
+        }
+        s_line = best_l;
+        s_dir = best_d;
         if (s_line < MAX_LINES) s_line_dir[s_line] = s_dir;  // seed the restored line's direction
       } else clamp_view();                                // same station refresh: keep the user's view
       s_switching = false;
