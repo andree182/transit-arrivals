@@ -142,7 +142,8 @@ static TextLayer *s_help_note;
 // hidden, so the ring is never empty. (s_nearest_pos holds only a position;
 // a legacy 255 "off" value is migrated to 0 on load.)
 static bool nearest_on(void) {
-  return true;
+  if (favorites_count() == 0) return true;
+  return s_nearest_pos != 254;
 }
 static uint8_t nearest_idx(void) {
   uint8_t p = (s_nearest_pos == 255) ? 0 : s_nearest_pos;
@@ -150,7 +151,7 @@ static uint8_t nearest_idx(void) {
   return p;
 }
 static uint8_t ring_len(void) {
-  return favorites_count() + 1;   // favorites + the permanent Nearest slot
+  return favorites_count() + (nearest_on() ? 1 : 0);
 }
 static bool ring_is_nearest(uint8_t ring_idx) {
   return nearest_on() && ring_idx == nearest_idx();

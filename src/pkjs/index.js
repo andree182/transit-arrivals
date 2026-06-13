@@ -6,8 +6,8 @@ var agencies = require('./lib/agencies');
 var alertsLib = require('./lib/alerts');
 
 function loadMirror() {
-  try { return JSON.parse(localStorage.getItem('mta_favs')) || { nearestPos: 0, favs: [], apiKey: '' }; }
-  catch (e) { return { nearestPos: 0, favs: [], apiKey: '' }; }
+  try { return JSON.parse(localStorage.getItem('mta_favs')) || { nearestPos: 0, favs: [], apiKey: '', nearestFavsOnly: false }; }
+  catch (e) { return { nearestPos: 0, favs: [], apiKey: '', nearestFavsOnly: false }; }
 }
 function saveMirror(obj) {
   try { localStorage.setItem('mta_favs', JSON.stringify(obj)); } catch (e) {}
@@ -66,9 +66,23 @@ function handleRequest(msg) {
   if (msg.UseNearest) {
     navigator.geolocation.getCurrentPosition(
       function (p) {
-        var st = stations.nearestStation(p.coords.latitude, p.coords.longitude);
+        var mirror = loadMirror();
+        var st = null;
+        if (mirror.nearestFavsOnly && mirror.favs && mirror.favs.length > 0) {
+          var minDist = Infinity;
+          for (var i = 0; i < mirror.favs.length; i++) {
+            var fs = stations.getStation(mirror.favs[i].id, mirror.favs[i].agency);
+            if (fs && fs.lat) {
+              var dx = fs.lon - p.coords.longitude, dy = fs.lat - p.coords.latitude;
+              var dist = dx*dx + dy*dy;
+              if (dist < minDist) { minDist = dist; st = fs; }
+            }
+          }
+        }
+        if (!st) st = stations.nearestStation(p.coords.latitude, p.coords.longitude);
+
         if (st) {
-          st.apiKey = loadMirror().apiKey;
+          st.apiKey = mirror.apiKey;
           refreshFor(st, token);
         } else sendError(2, token);
       },
@@ -110,6 +124,7 @@ Pebble.addEventListener('appmessage', function (e) {
        }
     }
     newMirror.apiKey = oldMirror.apiKey;
+    newMirror.nearestFavsOnly = oldMirror.nearestFavsOnly;
     saveMirror(newMirror);
     return;
   }
@@ -141,7 +156,7 @@ Pebble.addEventListener('showConfiguration', function () {
     // sys: lets the page label pure-PATH stations "· PATH", same as the watch.
     return { id: s.id, name: s.name, lines: s.lines, agency: s.agency, alt: s.alt, sys: s.sys };
   });
-  var html = config.buildConfigHtml(m.nearestPos, backfillAgency(m.favs), db, loadClock(), m.apiKey);
+  var html = config.buildConfigHtml(m.nearestPos, backfillAgency(m.favs), db, loadClock(), m.apiKey, m.nearestFavsOnly);
   Pebble.openURL('data:text/html,' + encodeURIComponent(html));
 });
 

@@ -70,8 +70,8 @@ function stationRank(q, name, alt) {
   return 0;
 }
 
-function buildConfigHtml(nearestPos, favs, stationDB, clock, apiKey) {
-  var initState = safeJson({ nearestPos: nearestPos, favs: favs, clock: clock | 0, apiKey: apiKey || '' });
+function buildConfigHtml(nearestPos, favs, stationDB, clock, apiKey, nearestFavsOnly) {
+  var initState = safeJson({ nearestPos: nearestPos, favs: favs, clock: clock | 0, apiKey: apiKey || '', nearestFavsOnly: !!nearestFavsOnly });
   var db = safeJson(stationDB);
   return '<!DOCTYPE html>\n' +
 '<html><head><meta charset="utf-8">' +
@@ -102,8 +102,12 @@ function buildConfigHtml(nearestPos, favs, stationDB, clock, apiKey) {
 '<section><h2>Clock</h2><div class="seg" id="clock">' +
 '<button data-clk="0">Auto</button><button data-clk="1">12-hour</button><button data-clk="2">24-hour</button>' +
 '</div><div class="hint">Shows the current time on the arrivals board. Auto follows your watch.</div></section>' +
-'<section><h2>Golemio API Key</h2><input id="apiKey" value="" style="width:100%;box-sizing:border-box;background:#2c2c2e;border:0;border-radius:6px;color:#fff;padding:10px;font-size:14px" placeholder="Optional API key for PID agency">' +
-'<div class="hint">Data provided by Golemio API under CC-BY license.</div></section>' +
+'<section><h2>Stations list</h2><div class="seg" id="nmode" style="flex-direction:column;gap:1px;background:#111">' +
+'<button data-nm="0" style="background:#2c2c2e">Start with nearest</button>' +
+'<button data-nm="1" style="background:#2c2c2e">Only favorites</button>' +
+'<button data-nm="2" style="background:#2c2c2e">End with nearest</button>' +
+'</div><div class="hint">Configure the Nearest station slot in the watch menu.</div></section>' +
+'<section><h2>Golemio API Key</h2><input id="apiKey" value="" style="width:100%;box-sizing:border-box;background:#2c2c2e;border:0;border-radius:6px;color:#fff;padding:10px;font-size:14px" placeholder="Optional API key for PID agency"></section>' +
 '<div id="chips"></div>' +
 '<section><h2>Add a station</h2>' +
 '<input id="search" placeholder="Search stations…" autocomplete="off">' +
@@ -196,14 +200,16 @@ stationRank.toString() + ';' +
 '}' +
 'document.getElementById("search").addEventListener("input",function(e){search(e.target.value);});' +
 // Clock segmented control: highlight the active mode, update state on tap.
-'var selClock=(state.clock|0);' +
+'var selClock=(state.clock|0);var selNm=(state.nearestPos===254)?1:(state.nearestPos>0?2:0);' +
 'function renderClock(){var seg=document.getElementById("clock");var bs=seg.getElementsByTagName("button");for(var i=0;i<bs.length;i++){var on=(parseInt(bs[i].getAttribute("data-clk"),10)===selClock);bs[i].className=on?"on":"";bs[i].onclick=(function(v){return function(){selClock=v;renderClock();};})(parseInt(bs[i].getAttribute("data-clk"),10));}}' +
+'function renderNm(){var seg=document.getElementById("nmode");var bs=seg.getElementsByTagName("button");for(var i=0;i<bs.length;i++){var on=(parseInt(bs[i].getAttribute("data-nm"),10)===selNm);bs[i].style.background=on?"#0a84ff":"#2c2c2e";bs[i].style.color=on?"#fff":"#bbb";bs[i].onclick=(function(v){return function(){selNm=v;renderNm();};})(parseInt(bs[i].getAttribute("data-nm"),10));}}' +
 'document.getElementById("save").addEventListener("click",function(){' +
-'var data=encodeURIComponent(JSON.stringify({nearestPos:state.nearestPos,favs:state.favs,clock:selClock,apiKey:document.getElementById("apiKey").value}));' +
+'var nPos = (selNm===1) ? 254 : ((selNm===2) ? (state.favs.length || 99) : 0);' +
+'var data=encodeURIComponent(JSON.stringify({nearestPos:nPos,favs:state.favs,clock:selClock,apiKey:document.getElementById("apiKey").value}));' +
 'var r=getReturn();location=r+(r.indexOf("#")>=0?"":"#")+data;' +
 '});' +
 'document.getElementById("apiKey").value = state.apiKey || "";' +
-'renderChips();renderFavs();renderClock();' +
+'renderChips();renderFavs();renderClock();renderNm();' +
 '})();</script></body></html>';
 }
 
