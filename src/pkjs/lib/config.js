@@ -107,8 +107,9 @@ function buildConfigHtml(nearestPos, favs, stationDB, clock, apiKey, nearestFavs
 '<button data-nm="1" style="background:#2c2c2e">Only favorites</button>' +
 '<button data-nm="2" style="background:#2c2c2e">End with nearest</button>' +
 '</div><div class="hint">Configure the Nearest station slot in the watch menu.</div></section>' +
-'<section><h2>Golemio API Key</h2><input id="apiKey" value="" style="width:100%;box-sizing:border-box;background:#2c2c2e;border:0;border-radius:6px;color:#fff;padding:10px;font-size:14px" placeholder="Optional API key for PID agency"></section>' +
 '<div id="chips"></div>' +
+'<section id="golemio-sec"><h2>Golemio API Key</h2><input id="apiKey" value="" style="width:100%;box-sizing:border-box;background:#2c2c2e;border:0;border-radius:6px;color:#fff;padding:10px;font-size:14px" placeholder="Optional API key for PID agency">' +
+'<div class="hint">Data provided by Golemio API under CC-BY license. <a href="https://api.golemio.cz/api-keys/auth/sign-in" target="_blank" style="color:#0a84ff;text-decoration:none">Get API Key</a></div></section>' +
 '<section><h2>Add a station</h2>' +
 '<input id="search" placeholder="Search stations…" autocomplete="off">' +
 '<ul id="results"></ul></section>' +
@@ -137,7 +138,8 @@ stationRank.toString() + ';' +
 'function badgeEl(s){var m=meta(s);if(!m.city)return null;var b=document.createElement("span");b.className="cb";b.style.background=m.c;b.style.color=textOn(m.c);b.textContent=m.city;return b;}' +
 'var selCity="All";' +
 'function cities(){var seen={},out=["All"];for(var i=0;i<DB.length;i++){var c=meta(DB[i]).city;if(c&&!seen[c]){seen[c]=1;out.push(c);}}return out;}' +
-'function renderChips(){var c=document.getElementById("chips");c.innerHTML="";cities().forEach(function(city){var on=(city===selCity);var b=document.createElement("button");b.className="chip"+(on?" on":"");b.setAttribute("data-city",city);b.textContent=city;if(city!=="All"){var col=colorForCity(city);b.style.background=col;b.style.color=textOn(col);b.style.opacity=on?"1":"0.45";b.style.border=on?"2px solid #fff":"2px solid transparent";}b.onclick=function(){selCity=city;renderChips();search(document.getElementById("search").value);renderFavs();};c.appendChild(b);});}' +
+'function renderChips(){var c=document.getElementById("chips");c.innerHTML="";cities().forEach(function(city){var on=(city===selCity);var b=document.createElement("button");b.className="chip"+(on?" on":"");b.setAttribute("data-city",city);b.textContent=city;if(city!=="All"){var col=colorForCity(city);b.style.background=col;b.style.color=textOn(col);b.style.opacity=on?"1":"0.45";b.style.border=on?"2px solid #fff":"2px solid transparent";}b.onclick=function(){selCity=city;renderChips();search(document.getElementById("search").value);renderFavs();updateGolemio();};c.appendChild(b);});}' +
+'function updateGolemio(){var sec=document.getElementById("golemio-sec");if(sec)sec.style.display=(selCity==="Prague")?"block":"none";}' +
 'function applyCity(s){return selCity==="All"||meta(s).city===selCity;}' +
 'function getReturn(){var m=location.search.match(/return_to=([^&]+)/);return m?decodeURIComponent(m[1]):"pebblejs://close#";}' +
 'function renderFavs(){' +
@@ -209,7 +211,7 @@ stationRank.toString() + ';' +
 'var r=getReturn();location=r+(r.indexOf("#")>=0?"":"#")+data;' +
 '});' +
 'document.getElementById("apiKey").value = state.apiKey || "";' +
-'renderChips();renderFavs();renderClock();renderNm();' +
+'renderChips();renderFavs();renderClock();renderNm();updateGolemio();' +
 '})();</script></body></html>';
 }
 
