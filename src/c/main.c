@@ -50,6 +50,7 @@ static uint8_t s_line = 0, s_dir = 0;
 // changes. Kept in sync with s_dir whenever the user flips the current line.
 static uint8_t s_line_dir[MAX_LINES] = {0};
 static uint8_t s_sel = 0;       // ring index: 0..ring_len()-1
+static bool s_startup = true;
 static uint8_t s_nearest_pos = 0; // 0..favorites_count() = Nearest slot position
 static uint8_t s_clock_mode = CLOCK_AUTO;   // footer clock: Auto/12h/24h (PERSIST_CLOCK)
 static bool s_switching = false;// true between a ring switch and the next bundle
@@ -218,7 +219,9 @@ static void tx_pump(void) {
     char tok[12];
     snprintf(tok, sizeof(tok), "%u", (unsigned)s_req_token);
     dict_write_cstring(out, MESSAGE_KEY_Req, tok);
-    if (ring_is_nearest(s_sel)) {
+    if (s_startup) {
+      dict_write_uint8(out, MESSAGE_KEY_UseNearest, (s_nearest_pos > 0) ? 2 : 1);
+    } else if (ring_is_nearest(s_sel)) {
       dict_write_uint8(out, MESSAGE_KEY_UseNearest, 1);
     } else {
       const Fav *f = favorites_get(ring_fav_index(s_sel));
@@ -675,6 +678,7 @@ static void open_settings(ClickRecognizerRef r, void *c) {
 }
 
 static void switch_to(uint8_t sel) {
+  s_startup = false;
   arrival_cancel();   // a station scroll takes over from any in-flight gold wipe
   uint8_t rl = ring_len();
   if (rl == 0) return;
@@ -1026,6 +1030,18 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
       s_have_bundle = true; s_error = -1;
       connect_wd_cancel();   // live data landed; the phone is reachable
       if (s_launch_settle) { app_timer_cancel(s_launch_settle); s_launch_settle = NULL; }
+      if (s_startup) {
+        s_startup = false;
+        if (s_nearest_pos > 0) {
+          int fi = favorites_index_of(s_bundle.id);
+          if (fi >= 0) {
+            s_sel = fav_ring_index(fi);
+            persist_write_int(PERSIST_SEL, s_sel);
+            const Fav *f = favorites_get(fi);
+            snprintf(s_hint, sizeof(s_hint), "%s", f ? f->name : "Nearest");
+          }
+        }
+      }
       if (strcmp(prev_id, s_bundle.id) != 0) {
         memset(s_line_dir, 0, sizeof(s_line_dir));        // forget the old station's per-line directions
         uint32_t min_delta = 0xFFFFFFFFu;
@@ -1056,6 +1072,7 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
       push_favsync(); request_refresh();
     } else {
       s_error = code; s_switching = false;
+      s_startup = false;
       connect_wd_cancel();   // a verdict arrived; no need for the watchdog screen too
       if (loading_active() && !loading_landing()) { loading_deinit(); load_stop(); }
     }
@@ -1425,10 +1442,8 @@ static void init(void) {
     s_nearest_pos = 0;
     persist_write_int(PERSIST_NEAREST_POS, s_nearest_pos);
   }
-  s_sel = persist_exists(PERSIST_SEL) ? (uint8_t)persist_read_int(PERSIST_SEL) : 0;
   s_clock_mode = persist_exists(PERSIST_CLOCK) ? (uint8_t)persist_read_int(PERSIST_CLOCK) : CLOCK_AUTO;
   hero_set_clock_mode((ClockMode)s_clock_mode);
-  clamp_sel();
 #ifdef MTA_DEBUG_STUB
   // Cold-start into the loading interstitial, then simulate a feed arrival so
   // the riffle settles — there is no phone to deliver data in the emulator.
@@ -1436,6 +1451,13 @@ static void init(void) {
 #else
   load_cached_bundle();
 #endif
+  if (s_nearest_pos == 0) {
+    s_sel = nearest_idx();
+  } else {
+    int fi = s_have_bundle ? favorites_index_of(s_bundle.id) : -1;
+    s_sel = (fi >= 0) ? fav_ring_index(fi) : 0;
+  }
+  clamp_sel();
   if (persist_exists(PERSIST_VIEW)) {
     int v = persist_read_int(PERSIST_VIEW);
     s_line = (uint8_t)((v >> 8) & 0xff);

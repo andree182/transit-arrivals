@@ -68,7 +68,8 @@ function handleRequest(msg) {
       function (p) {
         var mirror = loadMirror();
         var st = null;
-        if (mirror.nearestFavsOnly && mirror.favs && mirror.favs.length > 0) {
+        var preferFav = mirror.nearestFavsOnly || msg.UseNearest === 2;
+        if (preferFav && mirror.favs && mirror.favs.length > 0) {
           var minDist = Infinity;
           for (var i = 0; i < mirror.favs.length; i++) {
             var fs = stations.getStation(mirror.favs[i].id, mirror.favs[i].agency);
@@ -124,7 +125,7 @@ Pebble.addEventListener('appmessage', function (e) {
        }
     }
     newMirror.apiKey = oldMirror.apiKey;
-    newMirror.nearestFavsOnly = oldMirror.nearestFavsOnly;
+    newMirror.nearestFavsOnly = (newMirror.nearestPos === 254);
     saveMirror(newMirror);
     return;
   }
@@ -165,7 +166,10 @@ Pebble.addEventListener('webviewclosed', function (e) {
   var payload;
   try { payload = JSON.parse(decodeURIComponent(e.response)); } catch (err) { return; }
   if (!payload) return;
-  if (payload.favs) saveMirror(payload);
+  if (payload.favs) {
+    payload.nearestFavsOnly = (payload.nearestPos === 254);
+    saveMirror(payload);
+  }
   // The outbox is single-slot: a second send before the first is acked returns BUSY
   // and is dropped. So send Clock first, then FavSet only after Clock is acked.
   function sendFavSet() {
