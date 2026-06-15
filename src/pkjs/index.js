@@ -69,6 +69,7 @@ function handleRequest(msg) {
         var mirror = loadMirror();
         var st = null;
         var preferFav = mirror.nearestFavsOnly || msg.UseNearest === 2;
+        var selectedFav = null;
         if (preferFav && mirror.favs && mirror.favs.length > 0) {
           var minDist = Infinity;
           for (var i = 0; i < mirror.favs.length; i++) {
@@ -76,11 +77,19 @@ function handleRequest(msg) {
             if (fs && fs.lat) {
               var dx = fs.lon - p.coords.longitude, dy = fs.lat - p.coords.latitude;
               var dist = dx*dx + dy*dy;
-              if (dist < minDist) { minDist = dist; st = fs; }
+              if (dist < minDist) {
+                minDist = dist;
+                st = fs;
+                selectedFav = mirror.favs[i];
+              }
             }
           }
         }
-        if (!st) st = stations.nearestStation(p.coords.latitude, p.coords.longitude);
+        if (!st) {
+          st = stations.nearestStation(p.coords.latitude, p.coords.longitude);
+        } else if (selectedFav) {
+          st.filterLines = selectedFav.filterLines;
+        }
 
         if (st) {
           st.apiKey = mirror.apiKey;

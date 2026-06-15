@@ -14,6 +14,8 @@ void hero_set_clock_mode(ClockMode mode);
 // Write the current local time into out per the active mode. 12h drops the leading
 // zero ("7:42"); 24h is zero-padded ("19:42"). out must hold >= 6 bytes.
 void hero_clock_string(char *out, size_t n, ClockMode mode);
+int get_total_connections(const Bundle *b);
+bool get_connection_at(const Bundle *b, int conn_idx, uint8_t *out_line, uint8_t *out_dir);
 
 // Draws the arrivals hero for lines[line].dirs[dir] into ctx over `bounds`.
 // `now` is current epoch secs; countdown = epochBase + delta - now.

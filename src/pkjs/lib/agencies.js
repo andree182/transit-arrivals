@@ -29,6 +29,25 @@ function directionWord(route, dir) {
   if (!d) return '';
   return dir === 'N' ? d.N : d.S;
 }
+function parseIsoDate(s) {
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))?$/);
+  if (!m) return new Date(s).getTime();
+  var year = parseInt(m[1], 10);
+  var month = parseInt(m[2], 10) - 1;
+  var day = parseInt(m[3], 10);
+  var hour = parseInt(m[4], 10);
+  var min = parseInt(m[5], 10);
+  var sec = parseInt(m[6], 10);
+  var utc = Date.UTC(year, month, day, hour, min, sec);
+  if (m[7]) {
+    var sign = m[7] === '+' ? 1 : -1;
+    var offHours = parseInt(m[8], 10);
+    var offMins = parseInt(m[9], 10);
+    utc -= sign * (offHours * 3600 + offMins * 60) * 1000;
+  }
+  return utc;
+}
+
 function nowSecs() { return Math.floor(Date.now() / 1000); }
 
 function fetchFeed(url, cb) {
@@ -189,7 +208,7 @@ var PID = {
             
             var tsStr = dep.departure_timestamp.predicted || dep.departure_timestamp.scheduled || dep.arrival_timestamp.predicted || dep.arrival_timestamp.scheduled;
             if (!tsStr) return;
-            var ts = Math.floor(new Date(tsStr).getTime() / 1000);
+            var ts = Math.floor(parseIsoDate(tsStr) / 1000);
             
             if (!linesMap[line]) {
               linesMap[line] = {

@@ -2,6 +2,8 @@
 #include <string.h>
 #include <time.h>
 
+extern int s_scroll_idx;
+
 static ClockMode s_clock = CLOCK_AUTO;
 void hero_set_clock_mode(ClockMode mode) { s_clock = mode; }
 
@@ -59,7 +61,18 @@ static void draw_bullet_label(GContext *ctx, GPoint disc, int r, const char *lab
   bool bigDisc = (r >= 28);
   size_t len = strlen(label);
   GFont lf; int lnudge;
-  if (len >= 3) {
+  if (r < 18) {
+    if (len >= 3) {
+      lf = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+      lnudge = -4;
+    } else if (len == 2) {
+      lf = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+      lnudge = -3;
+    } else {
+      lf = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+      lnudge = -4;
+    }
+  } else if (len >= 3) {
     lf = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
     lnudge = -2;
   } else if (len == 2) {
@@ -249,186 +262,136 @@ static void hero_draw_suspended(GContext *ctx, GRect bounds, const Bundle *b, co
 }
 
 void hero_draw(GContext *ctx, GRect bounds, const Bundle *b, uint8_t line, uint8_t dir, time_t now) {
-  if (!b || line >= b->nLines) return;
-  const LineView *L = &b->lines[line];
-  if (L->nDirs == 0) { hero_draw_suspended(ctx, bounds, b, L); return; }
-  if (dir >= L->nDirs) dir = 0;
-  const DirView *D = &L->dirs[dir];
-  if (D->n == 0) return;
+  if (!b) return;
 
-  float SX = bounds.size.w / REF_W, SY = bounds.size.h / REF_H;
+  // Clean background
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+
   graphics_context_set_antialiased(ctx, true);
 
-  // Top slot, over the destination headsign: normally the direction word (small
-  // gray caps — a borough for MTA, empty for shuttles/SIR and agencies with no
-  // direction word). For timetable-based lines (PATCO, Tren Urbano) that have no
-  // direction word, a small amber "SCHED" badge sits here instead, so the rider
-  // knows the countdowns come from the published schedule, not a live feed.
-  int hdr_inset = PBL_IF_ROUND_ELSE(34, 4);
-  int dir_top = (int)(6 * SY);
-  const char *topTag = b->station;
-  if (topTag) {
-    graphics_context_set_text_color(ctx, GColorLightGray);
-    graphics_draw_text(ctx, topTag, fonts_get_system_font(FONT_KEY_GOTHIC_14),
-      GRect(hdr_inset, dir_top, bounds.size.w - 2 * hdr_inset, 16),
-      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
-  }
+  float SX = bounds.size.w / REF_W, SY = bounds.size.h / REF_H;
 
-  // On round, the top chord is narrow: inset hard and let the headsign wrap to
-  // two lines instead of ellipsizing. On rect, keep the single-line look. With
-  // no direction word, the headsign rises to fill the freed top slot.
-  GFont hdr = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
-  graphics_context_set_text_color(ctx, GColorWhite);
-  int hdr_top = dir_top + (topTag ? 14 : 2);
-  int hdr_h = PBL_IF_ROUND_ELSE(38, 22);
-  GTextOverflowMode hdr_of = PBL_IF_ROUND_ELSE(GTextOverflowModeWordWrap, GTextOverflowModeTrailingEllipsis);
-  
-  char destStr[30];
-  snprintf(destStr, sizeof(destStr), "> %s", D->dest);
-  graphics_draw_text(ctx, destStr, hdr, GRect(hdr_inset, hdr_top, bounds.size.w - 2 * hdr_inset, hdr_h),
-                     hdr_of, GTextAlignmentLeft, NULL);
+  // Top header: station name
+  char stn[40];
+  hero_station_strip(b->station, stn, sizeof(stn));
+  graphics_context_set_text_color(ctx, GColorLightGray);
+  graphics_draw_text(ctx, stn, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+                     GRect(10, 2, bounds.size.w - 20, 16),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 
-  // On taller screens the hero (disc + count) otherwise floats low with a dead
-  // band above it. Lift it proportionally to how much taller the screen is than
-  // basalt: zero on basalt/diorite/flint (SY==1, pixel-identical), tiny on
-  // chalk, meaningful on emery/gabbro.
-  int lift = (int)((SY - 1.0f) * 30.0f);
-  GPoint disc = GPoint((int)(DISC_CX * SX), (int)(DISC_CY * SY) - lift);
-  // The roundel letter tops out at BITHAM_42 (largest letter-capable system
-  // font), so the disc must stop growing too or the letter looks lost inside
-  // it. Cap keeps the letter:disc ratio consistent on emery/gabbro.
-  int r = (int)(DISC_R * ((SX + SY) / 2));
-  if (r > 35) r = 35;
+  // Bottom footer: current clock
+  char clk[8];
+  hero_clock_string(clk, sizeof(clk), s_clock);
+  graphics_draw_text(ctx, clk, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+                     GRect(10, bounds.size.h - 18, bounds.size.w - 20, 16),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 
-  // Count metrics are computed up front (before the disc is drawn) so the round
-  // displays can recentre the whole disc + "N min" group. The reference layout
-  // is left-biased — fine on rect, but the circular crop makes it look lopsided.
-  char num[12];
-  int secs = (int)(b->epochBase + D->delta[0]) - (int)now;
-  int mins = secs / 60;
-  fmt_count(mins, num, sizeof(num));
-  bool isNow = (mins <= 0);
-  bool isTriple = (!isNow && mins >= 100);                 // scheduled agencies overnight: 3-digit minutes
-  bool isDouble = (!isNow && mins >= 10 && !isTriple);
-  // A 3-digit count in BITHAM_42 is too wide — the number runs to the edge and
-  // shoves "min" off-screen. Drop to GOTHIC_28_BOLD so three digits occupy about
-  // the width of two BITHAM digits; "min" auto-follows ns.w so it stays on screen.
-  float leftX = isNow ? 75.8f : (isTriple ? 66.0f : (isDouble ? 68.8f : 76.6f));
-  float baseY = isNow ? 91.5f : (isTriple ? 91.5f : (isDouble ? 95.1f : 96.8f));
-  GFont nf = (isNow || isTriple) ? fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD)
-                                 : fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
-  GSize ns = graphics_text_layout_get_content_size(num, nf,
-               GRect(0, 0, bounds.size.w, bounds.size.h), GTextOverflowModeFill, GTextAlignmentLeft);
-  int nx = (int)(leftX * SX);
-  GFont uf = fonts_get_system_font(FONT_KEY_GOTHIC_14);
-  int min_gap = isNow ? 0 : (int)(MIN_GAP * SX);
-#if defined(PBL_ROUND)
-  // Recentre the disc + number + "min" group on the screen's vertical axis so
-  // it sits under the centered headsign and NEXT rows. Rect keeps its tuning.
-  {
-    int min_w = 0;
-    if (!isNow) {
-      GSize msz = graphics_text_layout_get_content_size("min", uf,
-                    GRect(0, 0, 40, 18), GTextOverflowModeFill, GTextAlignmentLeft);
-      min_w = msz.w;
-    }
-    int gleft = disc.x - r;
-    int gright = nx + ns.w + (isNow ? 0 : (min_gap + min_w));
-    int hshift = bounds.size.w / 2 - (gleft + gright) / 2;
-    disc.x += hshift;
-    nx += hshift;
-  }
-#else
-  // On the wider rect displays the reference layout leaves the number tucked
-  // tight against the disc and the whole group biased left. Nudge the count
-  // right in proportion to how much wider the screen is than basalt: zero on
-  // basalt/diorite/flint (pixel-identical), a touch of air on emery.
-  nx += (int)((SX - 1.0f) * 26.0f);
-#endif
+  // Connections list: 2 connections shown
+  int tc = get_total_connections(b);
+  int row_h = (int)(62 * SY);
+  int start_y = (int)(22 * SY);
 
-  // The soonest train (delta[0]) drives the roundel: a diamond when it's an
-  // express, the line's normal circle/pill otherwise.
-  bool headExpress = (D->expMask & 1) != 0;
-  draw_bullet(ctx, disc, r, L, headExpress);
+  GFont time_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  GFont desc_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  GFont next_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
 
-  graphics_context_set_text_color(ctx, GColorWhite);
-  // The number's vertical offset from the disc center is a FONT-METRIC
-  // constant (system fonts don't scale with SY), so anchor to the scaled
-  // disc.y and add the UNSCALED baseline offset locked on basalt. This keeps
-  // basalt pixel-identical and centers the digit on the roundel on round.
-  int ny = disc.y + (int)(baseY - DISC_CY) - ns.h;
-  graphics_draw_text(ctx, num, nf, GRect(nx, ny, ns.w + 4, ns.h + 8),
-                     GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  for (int i = 0; i < 2; i++) {
+    int conn_idx = s_scroll_idx + i;
+    if (conn_idx >= tc) break;
 
-  if (!isNow) {
-    graphics_context_set_text_color(ctx, GColorLightGray);
-    int ux = nx + ns.w + min_gap;
-    int uy = disc.y + (int)(MIN_BASEY - DISC_CY) - 16;
-    graphics_draw_text(ctx, "min", uf, GRect(ux, uy, 40, 18),
-                       GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-  }
+    uint8_t l = 0, d = 0;
+    if (!get_connection_at(b, conn_idx, &l, &d)) continue;
 
-  // NEXT row: "NEXT" then each upcoming train's minutes, laid out left-to-right
-  // and centered as a group. Express trains (expMask bit set) get a thin uncolored
-  // diamond outline so the rider can spot them in the queue; locals sit bare.
-  GFont ff = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
-  int ft_top = (int)(PBL_IF_ROUND_ELSE(110, 116) * SY);
-  int ft_h = 24;
-  // Static, not stack: hero_draw sits deep in the render call chain on a tiny app
-  // task stack; keeping its frame small avoids a stack overflow during the flip.
-  // Single-threaded, never reentrant, so shared storage is safe.
-  static char ntok[3][12]; static bool nexp[3]; int nTok = 0;   // [12]: holds any int, silences -Wformat-truncation
-  for (int a = 1; a < D->n && nTok < 3; a++) {
-    int m = (int)(b->epochBase + D->delta[a]) - (int)now; if (m < 0) m = 0;
-    snprintf(ntok[nTok], sizeof(ntok[nTok]), "%d", m / 60);
-    nexp[nTok] = (D->expMask >> a) & 1;
-    nTok++;
-  }
-  if (nTok > 0) {
-    int gap = 7;
-    int R = ft_h / 2;   // uniform diamond half-size — a true square, never stretched
-    GSize lblsz = graphics_text_layout_get_content_size("NEXT", ff,
-                    GRect(0, 0, 100, ft_h), GTextOverflowModeFill, GTextAlignmentLeft);
-    static int tw[3], slot[3]; int total = lblsz.w + gap;
-    for (int t = 0; t < nTok; t++) {
-      GSize s = graphics_text_layout_get_content_size(ntok[t], ff,
-                  GRect(0, 0, 60, ft_h), GTextOverflowModeFill, GTextAlignmentLeft);
-      tw[t] = s.w;
-      slot[t] = nexp[t] ? (2 * R) : tw[t];   // express token reserves the diamond's full width
-      total += slot[t] + (t < nTok - 1 ? gap : 0);
-    }
-    int x = (bounds.size.w - total) / 2; if (x < 2) x = 2;
-    graphics_context_set_text_color(ctx, GColorLightGray);
-    graphics_draw_text(ctx, "NEXT", ff, GRect(x, ft_top, lblsz.w + 4, ft_h),
-                       GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-    x += lblsz.w + gap;
-    for (int t = 0; t < nTok; t++) {
-      int cx = x + slot[t] / 2, cy = ft_top + ft_h / 2;
-      graphics_context_set_text_color(ctx, GColorLightGray);
-      graphics_draw_text(ctx, ntok[t], ff, GRect(cx - tw[t] / 2, ft_top, tw[t] + 4, ft_h),
-                         GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-      if (nexp[t]) {
-        // A faint near-black diamond: just a whisper of an outline so the rider
-        // can pick out the express without it shouting over the countdown.
-        static GPoint qp[4];
-        qp[0] = GPoint(cx, cy - R); qp[1] = GPoint(cx + R, cy);
-        qp[2] = GPoint(cx, cy + R); qp[3] = GPoint(cx - R, cy);
-        GPathInfo qi = { 4, qp };
-        GPath *qg = gpath_create(&qi);
-        graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite));
-        graphics_context_set_stroke_width(ctx, 1);
-        gpath_draw_outline(ctx, qg);
-        gpath_destroy(qg);
+    const LineView *L = &b->lines[l];
+    int row_y = start_y + i * row_h;
+
+    // Center disc vertically in the row
+    int r = (int)(22 * ((SX + SY) / 2));
+    if (r > 22) r = 22; // cap the radius so it fits nicely
+    int disc_x = r + (int)(4 * SX);
+    int disc_y = row_y + row_h / 2;
+
+    int text_x = disc_x + r + (int)(4 * SX);
+    int text_w = bounds.size.w - text_x - (int)(6 * SX);
+
+    if (L->nDirs > 0) {
+      const DirView *D = &L->dirs[d];
+      bool isExpress = (D->n > 0) && ((D->expMask & 1) != 0);
+      draw_bullet(ctx, GPoint(disc_x, disc_y), r, L, isExpress);
+
+      // Destination headsign (drawn on the first line: line 1)
+      char destStr[40];
+      snprintf(destStr, sizeof(destStr), "> %s", D->dest);
+      graphics_context_set_text_color(ctx, GColorWhite);
+      graphics_draw_text(ctx, destStr, desc_font,
+                         GRect(text_x, row_y + (int)(2 * SY), text_w, (int)(16 * SY)),
+                         GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+
+      // Nearest time (drawn on line 2)
+      if (D->n > 0) {
+        char num[24];
+        int secs = (int)(b->epochBase + D->delta[0]) - (int)now;
+        int mins = secs / 60;
+        if (mins <= 0) {
+          snprintf(num, sizeof(num), "Now");
+        } else {
+          snprintf(num, sizeof(num), "%d min", mins);
+        }
+        graphics_context_set_text_color(ctx, GColorWhite);
+        graphics_draw_text(ctx, num, time_font,
+                           GRect(text_x, row_y + (int)(18 * SY), text_w, (int)(20 * SY)),
+                           GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
       }
-      x += slot[t] + gap;
+
+      // Next times (drawn on line 3)
+      if (D->n > 1) {
+        char next_buf[32] = "";
+        for (int a = 1; a < D->n && a < 4; a++) {
+          int m = (int)(b->epochBase + D->delta[a] - now) / 60;
+          if (m < 0) m = 0;
+          char tmp[12];
+          snprintf(tmp, sizeof(tmp), " %d", m);
+          strncat(next_buf, tmp, sizeof(next_buf) - strlen(next_buf) - 1);
+        }
+        graphics_context_set_text_color(ctx, GColorLightGray);
+        graphics_draw_text(ctx, next_buf, next_font,
+                           GRect(text_x, row_y + (int)(38 * SY), text_w, (int)(16 * SY)),
+                           GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+      }
+    } else {
+      // Suspended
+      draw_bullet(ctx, GPoint(disc_x, disc_y), r, L, false);
+
+      graphics_context_set_text_color(ctx, GColorWhite);
+      graphics_draw_text(ctx, L->notice, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+                         GRect(text_x, row_y + (int)(12 * SY), text_w, (int)(40 * SY)),
+                         GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+    }
+
+    // Row separator line
+    if (i < 1 && conn_idx + 1 < tc) {
+      graphics_context_set_stroke_color(ctx, GColorDarkGray);
+      graphics_draw_line(ctx, GPoint(10, row_y + row_h), GPoint(bounds.size.w - 10, row_y + row_h));
     }
   }
 
-  // Current station + current-time clock, below NEXT. The footer helper picks the
-  // layout: clock on its own bold line when the name is one line, inline after the
-  // wrapped name otherwise.
-  char clk[8]; hero_clock_string(clk, sizeof clk, s_clock);
-  hero_draw_footer(ctx, bounds, "", clk);
+  // Scroll indicators
+  int top_dots_y = start_y - (int)(8 * SY);
+  int bottom_dots_y = start_y + 2 * row_h - (int)(8 * SY);
+
+  if (s_scroll_idx > 0) {
+    graphics_context_set_text_color(ctx, GColorLightGray);
+    graphics_draw_text(ctx, "...", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+                       GRect(0, top_dots_y, bounds.size.w, 14),
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  }
+  if (s_scroll_idx < tc - 2) {
+    graphics_context_set_text_color(ctx, GColorLightGray);
+    graphics_draw_text(ctx, "...", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+                       GRect(0, bottom_dots_y, bounds.size.w, 14),
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  }
 }
 
 // Emit one HeroGlyph per non-space character of a single line of text, matching

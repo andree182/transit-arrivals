@@ -51,6 +51,7 @@ static uint8_t s_line = 0, s_dir = 0;
 static uint8_t s_line_dir[MAX_LINES] = {0};
 static uint8_t s_sel = 0;       // ring index: 0..ring_len()-1
 static bool s_startup = true;
+int s_scroll_idx = 0;
 static uint8_t s_nearest_pos = 0; // 0..favorites_count() = Nearest slot position
 static uint8_t s_clock_mode = CLOCK_AUTO;   // footer clock: Auto/12h/24h (PERSIST_CLOCK)
 static bool s_switching = false;// true between a ring switch and the next bundle
@@ -82,6 +83,10 @@ static int       s_marq_x = 0;       // current horizontal scroll offset (px)
 static int       s_marq_max = 0;     // how far the subtitle overflows the cell
 static int       s_manage_w = 144;   // manage menu width, for overflow math
 static AppTimer *s_marq_timer = NULL;
+
+int get_total_connections(const Bundle *b);
+bool get_connection_at(const Bundle *b, int conn_idx, uint8_t *out_line, uint8_t *out_dir);
+int get_connection_index(const Bundle *b, uint8_t line, uint8_t dir);
 
 static void flip_step(void *ctx);
 static void flip_start(void);
@@ -866,63 +871,35 @@ static void bounce_start(int sign) {
 
 static void next_line(ClickRecognizerRef r, void *c) {
   ScreenKind sk = current_screen();
-  if (sk == SCR_ERROR || sk == SCR_OFFLINE) { retry_connection(); return; }   // no board to scroll: retry
-  if (!s_have_bundle || s_bundle.nLines == 0) return;
-  arrival_cancel();   // scrolling lines interrupts the gold wipe
-  if (s_bundle.nLines <= 1) { bounce_start(+1); return; }   // one line: nudge, don't flip to self
-  bool outpaced = s_fast || transition_active();   // pressed faster than the flip
-  snap_active_transition();
-  uint8_t to = (s_line + 1) % s_bundle.nLines;
-  uint8_t td = keep_dir(to);
-  if (retarget_loading(to, td)) return;
-  if (outpaced) { fast_arm(); commit_view_instant(to, td); return; }
-  if (transition_begin_line(s_line, s_dir, to, td)) {
-    if (s_canvas) layer_mark_dirty(s_canvas);
-    flip_start();
-  } else {
-    s_line = to; s_dir = td; persist_view(); render_dispatch();
+  if (sk == SCR_ERROR || sk == SCR_OFFLINE) { retry_connection(); return; }
+  if (!s_have_bundle) return;
+  int tc = get_total_connections(&s_bundle);
+  if (tc <= 2 || s_scroll_idx >= tc - 2) { bounce_start(+1); return; }
+  s_scroll_idx = s_scroll_idx + 1;
+  uint8_t tl = 0, td = 0;
+  if (get_connection_at(&s_bundle, s_scroll_idx, &tl, &td)) {
+    s_line = tl; s_dir = td;
+    persist_view();
   }
+  render_dispatch();
 }
 static void prev_line(ClickRecognizerRef r, void *c) {
   ScreenKind sk = current_screen();
-  if (sk == SCR_ERROR || sk == SCR_OFFLINE) { retry_connection(); return; }   // no board to scroll: retry
-  if (!s_have_bundle || s_bundle.nLines == 0) return;
-  arrival_cancel();   // scrolling lines interrupts the gold wipe
-  if (s_bundle.nLines <= 1) { bounce_start(-1); return; }   // one line: nudge up, don't flip to self
-  bool outpaced = s_fast || transition_active();
-  snap_active_transition();
-  uint8_t to = (s_line + s_bundle.nLines - 1) % s_bundle.nLines;
-  uint8_t td = keep_dir(to);
-  if (retarget_loading(to, td)) return;
-  if (outpaced) { fast_arm(); commit_view_instant(to, td); return; }
-  if (transition_begin_line(s_line, s_dir, to, td)) {
-    if (s_canvas) layer_mark_dirty(s_canvas);
-    flip_start();
-  } else {
-    s_line = to; s_dir = td; persist_view(); render_dispatch();
+  if (sk == SCR_ERROR || sk == SCR_OFFLINE) { retry_connection(); return; }
+  if (!s_have_bundle) return;
+  if (s_scroll_idx <= 0) { bounce_start(-1); return; }
+  s_scroll_idx = s_scroll_idx - 1;
+  uint8_t tl = 0, td = 0;
+  if (get_connection_at(&s_bundle, s_scroll_idx, &tl, &td)) {
+    s_line = tl; s_dir = td;
+    persist_view();
   }
+  render_dispatch();
 }
 static void flip_dir(ClickRecognizerRef r, void *c) {
   ScreenKind sk = current_screen();
-  if (sk == SCR_ERROR || sk == SCR_OFFLINE) { retry_connection(); return; }   // no board: retry
-  if (!s_have_bundle) return;
-  arrival_cancel();   // flipping direction interrupts the gold wipe
-  bool outpaced = s_fast || transition_active();
-  snap_active_transition();   // adopt any in-flight target so we toggle on from it
-  uint8_t nd = s_bundle.lines[s_line].nDirs; if (nd <= 1) {
-    if (nd == 1 && s_dir != 0) commit_view_instant(s_line, 0);
-    else bounce_start(+1);   // one-way line: nudge on a dead SELECT
-    return;
-  }
-  uint8_t to = (s_dir + 1) % nd;
-  if (retarget_loading(s_line, to)) return;
-  if (outpaced) { fast_arm(); commit_view_instant(s_line, to); return; }
-  if (transition_begin_dir(s_line, s_dir, to)) {
-    if (s_canvas) layer_mark_dirty(s_canvas);
-    flip_start();
-  } else {
-    s_dir = to; persist_view(); render_dispatch();
-  }
+  if (sk == SCR_ERROR || sk == SCR_OFFLINE) { retry_connection(); return; }
+  bounce_start(+1);
 }
 static void open_alerts_from_hero(ClickRecognizerRef r, void *c) {
   if (has_alerts()) open_alerts();
@@ -1061,6 +1038,11 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
       s_switching = false;
       save_cached_bundle(bun->value->data, bun->length);
       persist_view();
+      s_scroll_idx = get_connection_index(&s_bundle, s_line, s_dir);
+      int tc = get_total_connections(&s_bundle);
+      int max_scroll = tc - 2;
+      if (max_scroll < 0) max_scroll = 0;
+      if (s_scroll_idx > max_scroll) s_scroll_idx = max_scroll;
       int fi = favorites_index_of(s_bundle.id);
       if (fi >= 0) favorites_update_name((uint8_t)fi, s_bundle.station);
       loading_land_current();          // settle the interstitial onto real data
@@ -1097,7 +1079,14 @@ static void load_cached_bundle(void) {
     if (persist_read_data(PERSIST_BUNDLE_CHUNK0 + c, buf + got, (size_t)want) != want) break;
     got += want;
   }
-  if (got == len && bundle_decode(buf, (size_t)len, &s_bundle)) s_have_bundle = true;
+  if (got == len && bundle_decode(buf, (size_t)len, &s_bundle)) {
+    s_have_bundle = true;
+    s_scroll_idx = get_connection_index(&s_bundle, s_line, s_dir);
+    int tc = get_total_connections(&s_bundle);
+    int max_scroll = tc - 2;
+    if (max_scroll < 0) max_scroll = 0;
+    if (s_scroll_idx > max_scroll) s_scroll_idx = max_scroll;
+  }
   free(buf);
 }
 #endif
@@ -1433,6 +1422,61 @@ static void publish_glance(void) {
   app_glance_reload(glance_reload_cb, NULL);
 }
 
+int get_total_connections(const Bundle *b) {
+  int count = 0;
+  for (uint8_t l = 0; l < b->nLines; l++) {
+    const LineView *L = &b->lines[l];
+    int dirs = L->nDirs;
+    if (dirs == 0) dirs = 1;
+    count += dirs;
+  }
+  return count;
+}
+
+bool get_connection_at(const Bundle *b, int conn_idx, uint8_t *out_line, uint8_t *out_dir) {
+  int curr = 0;
+  for (uint8_t l = 0; l < b->nLines; l++) {
+    const LineView *L = &b->lines[l];
+    int dirs = L->nDirs;
+    if (dirs == 0) {
+      if (curr == conn_idx) {
+        *out_line = l;
+        *out_dir = 0;
+        return true;
+      }
+      curr++;
+    } else {
+      for (uint8_t d = 0; d < dirs; d++) {
+        if (curr == conn_idx) {
+          *out_line = l;
+          *out_dir = d;
+          return true;
+        }
+        curr++;
+      }
+    }
+  }
+  return false;
+}
+
+int get_connection_index(const Bundle *b, uint8_t line, uint8_t dir) {
+  int curr = 0;
+  for (uint8_t l = 0; l < b->nLines; l++) {
+    const LineView *L = &b->lines[l];
+    int dirs = L->nDirs;
+    if (dirs == 0) {
+      if (l == line) return curr;
+      curr++;
+    } else {
+      for (uint8_t d = 0; d < dirs; d++) {
+        if (l == line && d == dir) return curr;
+        curr++;
+      }
+    }
+  }
+  return 0;
+}
+
 static void init(void) {
   favorites_load();
   viewmem_load();
@@ -1453,9 +1497,20 @@ static void init(void) {
 #endif
   if (s_nearest_pos == 0) {
     s_sel = nearest_idx();
+    if (s_have_bundle) {
+      int fi = favorites_index_of(s_bundle.id);
+      if (fi >= 0) {
+        s_have_bundle = false;
+      }
+    }
   } else {
     int fi = s_have_bundle ? favorites_index_of(s_bundle.id) : -1;
-    s_sel = (fi >= 0) ? fav_ring_index(fi) : 0;
+    if (fi >= 0) {
+      s_sel = fav_ring_index(fi);
+    } else {
+      s_sel = 0;
+      s_have_bundle = false;
+    }
   }
   clamp_sel();
   if (persist_exists(PERSIST_VIEW)) {
@@ -1463,6 +1518,13 @@ static void init(void) {
     s_line = (uint8_t)((v >> 8) & 0xff);
     s_dir = (uint8_t)(v & 0xff);
     clamp_view();
+  }
+  if (s_have_bundle) {
+    s_scroll_idx = get_connection_index(&s_bundle, s_line, s_dir);
+    int tc = get_total_connections(&s_bundle);
+    int max_scroll = tc - 2;
+    if (max_scroll < 0) max_scroll = 0;
+    if (s_scroll_idx > max_scroll) s_scroll_idx = max_scroll;
   }
   // Reopen with cached data: flip the board in through the interstitial as fresh
   // data fetches, instead of snapping the stale cache on screen. The 'ready'

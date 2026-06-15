@@ -13,6 +13,7 @@ static const char *const LEGACY_DIR_WORD[] = { "MANHATTAN", "BROOKLYN", "QUEENS"
 
 bool bundle_decode(const uint8_t *p, size_t len, Bundle *out) {
   if (len < 56 || p[0] < 3 || p[0] > 9) return false;
+  memset(out, 0, sizeof(Bundle));
   size_t i = 0;
   out->version = p[i++];
   // v8 widened the id field 11 -> 39 bytes (longest real id: SEPTA's 38-byte
