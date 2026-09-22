@@ -1,15 +1,15 @@
 {
-  "name": "transit-arrivals",
-  "author": "David Torcivia",
-  "version": "1.13",
+  "name": "PID Arrivals",
+  "author": "Andrej Krutak",
+  "version": "1.0",
   "keywords": [
     "pebble-app"
   ],
   "private": true,
   "dependencies": {},
   "pebble": {
-    "displayName": "Transit Arrivals",
-    "uuid": "ed4e3adb-9e84-45f6-be7d-da51d2ca4e1d",
+    "displayName": "PID Arrivals",
+    "uuid": "1b44ebd1-272f-4489-bb88-8cb969dcba11",
     "sdkVersion": "3",
     "enableMultiJS": true,
     "targetPlatforms": [
