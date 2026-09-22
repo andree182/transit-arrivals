@@ -286,6 +286,6 @@ var REGISTRY = {
   lametro: proxied.makeProxiedAgency({ id: 'lametro', name: 'Metro' }),
   pid: PID
 };
-function get(id) { return REGISTRY[id] || MTA; }   // default to MTA for legacy favorites
+function get(id) { return REGISTRY[id] || PID; }   // default to PID for legacy favorites
 
 module.exports = { get: get, _registry: REGISTRY };

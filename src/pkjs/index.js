@@ -33,7 +33,7 @@ function sendError(code, token) {
 }
 
 function agencyForStation(station) {
-  return agencies.get(station.agency || 'mta');
+  return agencies.get(station.agency || 'pid');
 }
 
 function refreshFor(station, token) {

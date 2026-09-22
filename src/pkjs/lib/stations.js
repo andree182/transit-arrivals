@@ -29,11 +29,12 @@ function tag(list, agency) {
 // nearest-station, and the config chips (the chips are derived from stations in the
 // DB) until the keys land. To enable one: drop it from this set and ship — no other
 // change needed (its module/data are already wired up).
+var ONLY_PID = true; // Toggle to true to hide US transit systems and only expose PID
 var NOT_YET_LIVE = { skyline: true };
 
 // Concatenation of every agency's on-phone directory, minus the not-yet-live ones.
 var DB = tag(MTA_DB, 'mta').concat(tag(CTA_DB, 'cta')).concat(tag(WMATA_DB, 'wmata')).concat(tag(MARTA_DB, 'marta')).concat(tag(BART_DB, 'bart')).concat(tag(MBTA_DB, 'mbta')).concat(tag(SEPTA_DB, 'septa')).concat(tag(GCRTA_DB, 'gcrta')).concat(tag(MIAMI_DB, 'miami')).concat(tag(BALT_DB, 'baltimore')).concat(tag(SKYLINE_DB, 'skyline')).concat(tag(PATCO_DB, 'patco')).concat(tag(TRENURBANO_DB, 'trenurbano')).concat(tag(LAMETRO_DB, 'lametro')).concat(tag(PID_DB, 'pid'))
-  .filter(function (s) { return !NOT_YET_LIVE[s.agency]; });
+  .filter(function (s) { return ONLY_PID ? s.agency === 'pid' : !NOT_YET_LIVE[s.agency]; });
 
 function haversine(aLat, aLon, bLat, bLon) {
   var R = 6371000, toRad = Math.PI / 180;
